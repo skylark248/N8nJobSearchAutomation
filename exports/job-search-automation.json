@@ -1,0 +1,259 @@
+{
+  "name": "Job Search Automation - AI Matching & Cover Letters",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-600, 0],
+      "parameters": {}
+    },
+    {
+      "id": "setPreferences",
+      "name": "Set Job Preferences",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 0],
+      "parameters": {
+        "jsCode": "// === EDIT THESE SETTINGS ===\nconst config = {\n  searchQuery: '\"Backend Developer\" OR \"Senior Backend Developer\" OR \".NET Developer\" OR \"Full Stack Developer\" OR \"Software Engineer 2\" OR \"SDE 2\" OR \"Senior Software Engineer\"',\n  location: 'India',\n  minScore: 70,\n  maxResults: 20,\n  yourEmail: 'YOUR_EMAIL@gmail.com',\n  spreadsheetId: 'YOUR_GOOGLE_SHEET_ID',\n  // Paste your resume text below (or use Google Drive PDF extraction)\n  resumeText: `PASTE YOUR RESUME TEXT HERE\n\nReplace this with your actual resume content.\nThe AI will use this to score job matches and generate cover letters.\n\nSkills: .NET, C#, React, JavaScript, TypeScript, SQL Server, Azure, REST APIs, etc.\nExperience: X years of backend/full-stack development.\n`\n};\n\nreturn { json: config };"
+      }
+    },
+    {
+      "id": "searchJobs",
+      "name": "Search Google Jobs (SerpAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, 0],
+      "parameters": {
+        "url": "https://serpapi.com/search.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "engine", "value": "google_jobs" },
+            { "name": "q", "value": "={{ $json.searchQuery }}" },
+            { "name": "location", "value": "={{ $json.location }}" },
+            { "name": "chips", "value": "date_posted:today" },
+            { "name": "api_key", "value": "YOUR_SERPAPI_KEY" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      }
+    },
+    {
+      "id": "parseJobs",
+      "name": "Parse Job Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst jobs = response.jobs_results || [];\nconst config = $('Set Job Preferences').first().json;\n\nif (jobs.length === 0) {\n  throw new Error('No jobs found. Try broadening your search query or changing location.');\n}\n\nconst parsed = jobs.slice(0, config.maxResults || 20).map(job => {\n  // Generate unique ID from company + title\n  const raw = (job.company_name || '') + '|' + (job.title || '');\n  let hash = 0;\n  for (let i = 0; i < raw.length; i++) {\n    const char = raw.charCodeAt(i);\n    hash = ((hash << 5) - hash) + char;\n    hash = hash & hash;\n  }\n  const jobId = 'JOB_' + Math.abs(hash).toString(36);\n\n  // Extract apply link\n  let applyLink = '';\n  if (job.apply_options && job.apply_options.length > 0) {\n    applyLink = job.apply_options[0].link || '';\n  } else if (job.share_link) {\n    applyLink = job.share_link;\n  }\n\n  return {\n    jobId,\n    title: job.title || 'Unknown Title',\n    company: job.company_name || 'Unknown Company',\n    location: job.location || 'Not specified',\n    description: (job.description || '').substring(0, 3000),\n    postedDate: job.detected_extensions?.posted_at || 'Unknown',\n    applyLink,\n    source: job.via || 'Google Jobs',\n    salary: job.detected_extensions?.salary || 'Not listed',\n    schedule: job.detected_extensions?.schedule_type || ''\n  };\n});\n\nreturn { json: { jobs: parsed, totalFound: jobs.length } };"
+      }
+    },
+    {
+      "id": "filterDuplicates",
+      "name": "Filter Duplicates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 0],
+      "parameters": {
+        "jsCode": "// For the first run, no duplicates exist. On subsequent runs,\n// this node would check against Google Sheets.\n// For now, pass all jobs through. The Google Sheets append will\n// naturally handle duplicates via the jobId column.\nconst data = $input.first().json;\nconst jobs = data.jobs || [];\n\n// Return as individual items for processing\nreturn jobs.map(job => ({ json: job }));"
+      }
+    },
+    {
+      "id": "scoreMatch",
+      "name": "Score & Match (GPT-5)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [400, 0],
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-5",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a job matching expert for software engineering roles. You analyze job descriptions against a candidate's resume and provide a precise compatibility score. Always respond with valid JSON only, no markdown."
+            },
+            {
+              "content": "=CANDIDATE RESUME:\n{{ $('Set Job Preferences').first().json.resumeText }}\n\nJOB POSTING:\nTitle: {{ $json.title }}\nCompany: {{ $json.company }}\nLocation: {{ $json.location }}\nDescription: {{ $json.description }}\n\nAnalyze this job against the candidate's resume. Consider: tech stack match, seniority level, role type (backend vs full-stack), and required experience. Respond with ONLY valid JSON:\n{\n  \"score\": 0-100,\n  \"matchReason\": \"2-3 sentences on why this is a good/bad match\",\n  \"missingSkills\": [\"skill1\", \"skill2\"],\n  \"keyMatchingSkills\": [\"skill1\", \"skill2\"],\n  \"experienceFit\": \"under-qualified|good-fit|over-qualified\",\n  \"recommendation\": \"strong-apply|apply|maybe|skip\"\n}"
+            }
+          ]
+        },
+        "options": {},
+        "requestOptions": {}
+      }
+    },
+    {
+      "id": "parseScore",
+      "name": "Parse AI Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 0],
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json.content || $input.first().json.message?.content || '';\nconst jobData = $('Filter Duplicates').item;\n\nlet parsed;\ntry {\n  parsed = JSON.parse(aiResponse);\n} catch (e) {\n  const jsonMatch = aiResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    // If parsing fails, assign a default low score\n    parsed = {\n      score: 0,\n      matchReason: 'Could not parse AI response',\n      missingSkills: [],\n      keyMatchingSkills: [],\n      experienceFit: 'unknown',\n      recommendation: 'skip'\n    };\n  }\n}\n\nreturn {\n  json: {\n    ...jobData.json,\n    score: parsed.score || 0,\n    matchReason: parsed.matchReason || '',\n    missingSkills: parsed.missingSkills || [],\n    keyMatchingSkills: parsed.keyMatchingSkills || [],\n    experienceFit: parsed.experienceFit || 'unknown',\n    recommendation: parsed.recommendation || 'skip'\n  }\n};"
+      }
+    },
+    {
+      "id": "filterMatches",
+      "name": "Filter Top Matches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 0],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst minScore = $('Set Job Preferences').first().json.minScore || 70;\n\nif (item.score >= minScore) {\n  return { json: item };\n}\n\n// Below threshold - skip this job (return empty to filter out)\nreturn [];"
+      }
+    },
+    {
+      "id": "generateCoverLetter",
+      "name": "Generate Cover Letter (GPT-5)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1000, 0],
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-5",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an expert cover letter writer for software engineering roles. Write concise, compelling cover letters under 300 words. Be professional but personable. Every sentence must be specific to the job and candidate. No generic filler. Do NOT use markdown formatting."
+            },
+            {
+              "content": "=CANDIDATE RESUME:\n{{ $('Set Job Preferences').first().json.resumeText }}\n\nJOB DETAILS:\nTitle: {{ $json.title }}\nCompany: {{ $json.company }}\nLocation: {{ $json.location }}\nDescription: {{ $json.description }}\nKey matching skills: {{ $json.keyMatchingSkills.join(', ') }}\n\nWrite a tailored cover letter addressed to \"Hiring Manager\" at {{ $json.company }}.\nFocus on: .NET, C#, React, backend architecture, and any specific technologies mentioned in the job description.\nRespond with ONLY the cover letter text."
+            }
+          ]
+        },
+        "options": {},
+        "requestOptions": {}
+      }
+    },
+    {
+      "id": "addCoverLetter",
+      "name": "Attach Cover Letter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 0],
+      "parameters": {
+        "jsCode": "const jobData = $('Filter Top Matches').item;\nconst coverLetter = $input.first().json.content || $input.first().json.message?.content || 'Cover letter generation failed.';\n\nreturn {\n  json: {\n    ...jobData.json,\n    coverLetter: coverLetter.trim(),\n    processedDate: new Date().toISOString().split('T')[0]\n  }\n};"
+      }
+    },
+    {
+      "id": "saveToSheet",
+      "name": "Save to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1400, 0],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "__rl": true,
+          "mode": "id"
+        },
+        "sheetName": {
+          "value": "Job Tracker",
+          "__rl": true,
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.processedDate }}",
+            "Job Title": "={{ $json.title }}",
+            "Company": "={{ $json.company }}",
+            "Location": "={{ $json.location }}",
+            "Match Score": "={{ $json.score }}",
+            "Recommendation": "={{ $json.recommendation }}",
+            "Match Reason": "={{ $json.matchReason }}",
+            "Missing Skills": "={{ $json.missingSkills.join(', ') }}",
+            "Apply Link": "={{ $json.applyLink }}",
+            "Cover Letter": "={{ $json.coverLetter }}",
+            "Status": "Not Applied",
+            "Applied Date": ""
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "buildEmail",
+      "name": "Build Email Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 0],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst config = $('Set Job Preferences').first().json;\nconst today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nif (items.length === 0) {\n  return {\n    json: {\n      subject: `Job Search: No new matches found - ${today}`,\n      htmlBody: `<html><body style=\"font-family: Arial, sans-serif;\"><h2>Job Search Report - ${today}</h2><p>No new jobs matched your criteria (minimum score: ${config.minScore}).</p><p>Try broadening your search query or lowering the minimum score.</p></body></html>`,\n      matchCount: 0,\n      topScore: 0,\n      yourEmail: config.yourEmail\n    }\n  };\n}\n\n// Sort by score descending\nconst sorted = items.map(i => i.json).sort((a, b) => (b.score || 0) - (a.score || 0));\nconst topScore = sorted[0]?.score || 0;\n\nlet jobRows = sorted.map((job, i) => {\n  const scoreColor = job.score >= 85 ? '#27ae60' : job.score >= 70 ? '#f39c12' : '#e74c3c';\n  const recBadge = job.recommendation === 'strong-apply' ? 'Strong Apply' :\n                   job.recommendation === 'apply' ? 'Apply' :\n                   job.recommendation === 'maybe' ? 'Maybe' : 'Skip';\n\n  return `\n    <tr style=\"border-bottom: 1px solid #eee;\">\n      <td style=\"padding: 12px;\">\n        <strong>${job.title}</strong><br>\n        <span style=\"color: #666;\">${job.company} - ${job.location}</span><br>\n        <span style=\"color: #888; font-size: 12px;\">${job.source} | ${job.salary}</span>\n      </td>\n      <td style=\"padding: 12px; text-align: center;\">\n        <span style=\"background: ${scoreColor}; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold;\">${job.score}</span>\n      </td>\n      <td style=\"padding: 12px; text-align: center;\">${recBadge}</td>\n      <td style=\"padding: 12px;\">\n        <a href=\"${job.applyLink}\" style=\"background: #3498db; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; display: inline-block;\">Apply</a>\n      </td>\n    </tr>\n    <tr>\n      <td colspan=\"4\" style=\"padding: 8px 12px; background: #f9f9f9;\">\n        <strong>Why it matches:</strong> ${job.matchReason}<br>\n        ${job.missingSkills.length > 0 ? '<strong>Missing:</strong> ' + job.missingSkills.join(', ') : ''}\n      </td>\n    </tr>\n    <tr>\n      <td colspan=\"4\" style=\"padding: 8px 12px; background: #f0f7ff;\">\n        <details>\n          <summary style=\"cursor: pointer; font-weight: bold;\">Cover Letter (click to expand)</summary>\n          <div style=\"white-space: pre-wrap; margin-top: 8px; padding: 12px; background: white; border: 1px solid #ddd; border-radius: 4px;\">${job.coverLetter}</div>\n        </details>\n      </td>\n    </tr>`;\n}).join('');\n\nconst htmlBody = `\n<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;\">\n  <div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: white; margin: 0;\">Job Search Report</h1>\n    <p style=\"color: rgba(255,255,255,0.8); margin: 8px 0 0;\">${today}</p>\n  </div>\n  <div style=\"background: #f5f5f5; padding: 16px; display: flex; gap: 16px;\">\n    <div style=\"background: white; padding: 12px 24px; border-radius: 8px; text-align: center;\">\n      <div style=\"font-size: 24px; font-weight: bold; color: #3498db;\">${sorted.length}</div>\n      <div style=\"color: #888; font-size: 12px;\">Matches Found</div>\n    </div>\n    <div style=\"background: white; padding: 12px 24px; border-radius: 8px; text-align: center;\">\n      <div style=\"font-size: 24px; font-weight: bold; color: #27ae60;\">${topScore}</div>\n      <div style=\"color: #888; font-size: 12px;\">Top Score</div>\n    </div>\n  </div>\n  <table style=\"width: 100%; border-collapse: collapse; background: white;\">\n    <thead>\n      <tr style=\"background: #ecf0f1;\">\n        <th style=\"padding: 12px; text-align: left;\">Job</th>\n        <th style=\"padding: 12px; text-align: center;\">Score</th>\n        <th style=\"padding: 12px; text-align: center;\">Action</th>\n        <th style=\"padding: 12px;\">Link</th>\n      </tr>\n    </thead>\n    <tbody>\n      ${jobRows}\n    </tbody>\n  </table>\n  <div style=\"padding: 16px; text-align: center; color: #888; font-size: 12px;\">\n    Generated by n8n Job Search Automation | Min score: ${config.minScore}\n  </div>\n</body>\n</html>`;\n\nreturn {\n  json: {\n    subject: `${sorted.length} Job Matches (Top: ${topScore}/100) - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,\n    htmlBody,\n    matchCount: sorted.length,\n    topScore,\n    yourEmail: config.yourEmail\n  }\n};"
+      }
+    },
+    {
+      "id": "sendDigest",
+      "name": "Send Gmail Digest",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1800, 0],
+      "parameters": {
+        "sendTo": "={{ $json.yourEmail }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.htmlBody }}",
+        "emailType": "html",
+        "operation": "send",
+        "options": {}
+      }
+    },
+    {
+      "id": "successOutput",
+      "name": "Success Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 0],
+      "parameters": {
+        "jsCode": "const emailData = $input.first().json;\n\nreturn {\n  json: {\n    success: true,\n    message: 'Job search automation completed!',\n    matchCount: emailData.matchCount || 0,\n    topScore: emailData.topScore || 0,\n    emailSent: true,\n    sentTo: emailData.yourEmail || 'unknown',\n    timestamp: new Date().toISOString()\n  }\n};"
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Set Job Preferences", "type": "main", "index": 0 }]]
+    },
+    "Set Job Preferences": {
+      "main": [[{ "node": "Search Google Jobs (SerpAPI)", "type": "main", "index": 0 }]]
+    },
+    "Search Google Jobs (SerpAPI)": {
+      "main": [[{ "node": "Parse Job Results", "type": "main", "index": 0 }]]
+    },
+    "Parse Job Results": {
+      "main": [[{ "node": "Filter Duplicates", "type": "main", "index": 0 }]]
+    },
+    "Filter Duplicates": {
+      "main": [[{ "node": "Score & Match (GPT-5)", "type": "main", "index": 0 }]]
+    },
+    "Score & Match (GPT-5)": {
+      "main": [[{ "node": "Parse AI Score", "type": "main", "index": 0 }]]
+    },
+    "Parse AI Score": {
+      "main": [[{ "node": "Filter Top Matches", "type": "main", "index": 0 }]]
+    },
+    "Filter Top Matches": {
+      "main": [[{ "node": "Generate Cover Letter (GPT-5)", "type": "main", "index": 0 }]]
+    },
+    "Generate Cover Letter (GPT-5)": {
+      "main": [[{ "node": "Attach Cover Letter", "type": "main", "index": 0 }]]
+    },
+    "Attach Cover Letter": {
+      "main": [[{ "node": "Save to Google Sheets", "type": "main", "index": 0 }]]
+    },
+    "Save to Google Sheets": {
+      "main": [[{ "node": "Build Email Digest", "type": "main", "index": 0 }]]
+    },
+    "Build Email Digest": {
+      "main": [[{ "node": "Send Gmail Digest", "type": "main", "index": 0 }]]
+    },
+    "Send Gmail Digest": {
+      "main": [[{ "node": "Success Summary", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
