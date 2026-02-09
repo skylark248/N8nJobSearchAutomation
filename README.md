@@ -73,8 +73,8 @@ Before you start, make sure you have:
 ### Step 1: Clone the Repository
 
 ```bash
-git clone --recurse-submodules https://github.com/your-username/JobSearchAutomation.git
-cd JobSearchAutomation
+git clone --recurse-submodules https://github.com/skylark248/N8nJobSearchAutomation.git
+cd N8nJobSearchAutomation
 ```
 
 > **Already cloned without `--recurse-submodules`?** Run this to fetch the submodules:

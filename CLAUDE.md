@@ -6,7 +6,7 @@
 - **Focus**: Automated job search with AI matching and cover letter generation
 - **n8n Workflow ID**: `r1rpLsVRxOrsVtC3` (deployed to running instance)
 - **Workflow Name**: "Job Search Automation - AI Matching & Cover Letters"
-- **GitHub Repo**: Not yet pushed (user will `git init` and push separately)
+- **GitHub Repo**: https://github.com/skylark248/N8nJobSearchAutomation.git
 
 ## Parent Directory Context
 

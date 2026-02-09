@@ -13,10 +13,10 @@
 Manual Trigger
     |
     v
-[Set Job Preferences] -- target roles, location, resume text
+[Set Job Preferences] -- Code node: target roles, location, resume text, minScore
     |
     v
-[Search Google Jobs] -- SerpAPI Google Jobs engine (one query per role)
+[Search Google Jobs (SerpAPI)] -- HTTP Request to SerpAPI Google Jobs endpoint
     |
     v
 [Parse Job Results] -- Code node: extracts title, company, location, link
@@ -25,19 +25,19 @@ Manual Trigger
 [Filter Duplicates] -- Code node: deduplicates by company + job title
     |
     v
-[Score Job Match] -- GPT-5 scores each job 0-100 against resume
+[Score & Match (GPT-5)] -- OpenAI node: scores each job 0-100 against resume
     |
     v
-[Parse AI Scores] -- Code node: extracts score, recommendation, reasoning
+[Parse AI Score] -- Code node: extracts score, recommendation, reasoning
     |
     v
-[Filter Top Matches] -- IF node: score >= 70 only
+[Filter Top Matches] -- Code node: score >= 70 only
     |
     v
-[Generate Cover Letter] -- GPT-5 writes tailored cover letter per job
+[Generate Cover Letter (GPT-5)] -- OpenAI node: tailored cover letter per job
     |
     v
-[Format for Sheets] -- Code node: adds date, status columns, formats data
+[Attach Cover Letter] -- Code node: merges cover letter with job data
     |
     v
 [Save to Google Sheets] -- Appends rows to "Job Tracker" spreadsheet
@@ -46,10 +46,10 @@ Manual Trigger
 [Build Email Digest] -- Code node: builds HTML summary of new matches
     |
     v
-[Send Gmail Notification] -- Sends digest email with top job matches
+[Send Gmail Digest] -- Sends digest email with top job matches
     |
     v
-[Done Output] -- Returns summary stats (jobs found, matches, emails sent)
+[Success Summary] -- Returns summary stats (jobs found, matches, emails sent)
 ```
 
 ## Node Details
@@ -61,25 +61,31 @@ Manual Trigger
 - **Notes**: Replace with Schedule Trigger (`0 9 * * *`) for daily automation.
 
 ### Node 2: Set Job Preferences
-- **Type**: `n8n-nodes-base.set` (v3.4)
+- **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `setPreferences`
 
-**Parameters**:
-- `targetRoles`: Array of job titles to search:
-  - Backend Developer
-  - Senior Backend Developer
-  - .NET Developer
-  - Senior .NET Developer
-  - Full Stack Developer
-  - Senior Full Stack Developer
-  - Software Engineer 2
-  - SDE 2
-  - Senior Software Engineer
-- `targetLocation`: Target city/state or "remote" (e.g., `"United States"`)
-- `resumeText`: Full resume as plain text (paste your resume here)
-- `minScore`: Minimum match score threshold (default: `70`)
+**Purpose**: Central config node -- user edits this to change search criteria.
 
-### Node 3: Search Google Jobs
+**Output fields**:
+- `searchQuery`: All target roles joined with OR operator
+- `location`: Target location (default: "India")
+- `minScore`: Minimum match score threshold (default: 70)
+- `resumeText`: Full resume as plain text (paste your resume here)
+- `yourEmail`: Gmail address for digest emails
+- `spreadsheetId`: Google Sheet ID for saving results
+
+**Target roles** (joined into searchQuery):
+- Backend Developer
+- Senior Backend Developer
+- .NET Developer
+- Senior .NET Developer
+- Full Stack Developer
+- Senior Full Stack Developer
+- Software Engineer 2
+- SDE 2
+- Senior Software Engineer
+
+### Node 3: Search Google Jobs (SerpAPI)
 - **Type**: `n8n-nodes-base.httpRequest` (v4.2)
 - **ID**: `searchJobs`
 
@@ -91,8 +97,8 @@ Manual Trigger
   "queryParameters": {
     "parameters": [
       { "name": "engine", "value": "google_jobs" },
-      { "name": "q", "value": "={{ $json.targetRoles.join(' OR ') }}" },
-      { "name": "location", "value": "={{ $json.targetLocation }}" },
+      { "name": "q", "value": "={{ $json.searchQuery }}" },
+      { "name": "location", "value": "={{ $json.location }}" },
       { "name": "api_key", "value": "YOUR_SERPAPI_KEY" }
     ]
   },
@@ -106,112 +112,101 @@ Manual Trigger
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `parseJobs`
 
-**Code summary**: Extracts job listings from SerpAPI response. Maps each result to a normalized object with fields: `title`, `company`, `location`, `description`, `applyLink`, `source`. Handles missing fields gracefully.
+**Code summary**: Extracts `jobs_results` from SerpAPI response. Maps each result to a normalized object with fields: `title`, `company`, `location`, `description` (truncated to 3000 chars), `applyLink` (from `apply_options[0].link` or `share_link`), `source`. Generates `jobId` hash from company+title (lowercased, trimmed). Handles missing fields gracefully.
 
 ### Node 5: Filter Duplicates
 - **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `filterDuplicates`
 
-**Code summary**: Deduplicates jobs by creating a composite key from `company + title` (lowercased, trimmed). Keeps only the first occurrence of each unique job. Logs how many duplicates were removed.
+**Code summary**: Deduplicates jobs by creating a composite key from `company + title` (lowercased, trimmed). Keeps only the first occurrence of each unique job. Outputs individual items (not array) for per-job processing downstream.
 
-### Node 6: Score Job Match
+### Node 6: Score & Match (GPT-5)
 - **Type**: `n8n-nodes-base.openAi` (v1)
 - **ID**: `scoreMatch`
 - **Credential**: OpenAI API
 
 **Parameters**:
 - **Model**: GPT-5
-- **System prompt**: Instructs GPT-5 to act as a technical recruiter, compare the job description against the candidate's resume, and return a JSON object with: `score` (0-100), `recommendation` (Strong Match / Good Match / Weak Match / No Match), `matchReason` (why the candidate fits), `missingSkills` (gaps to address).
-- **User message**: Contains the job title, company, description, and the candidate's resume text.
+- **System prompt**: Instructs GPT-5 to act as a job matching expert. Compares the job description against the candidate's resume. Returns JSON with: `score` (0-100), `recommendation` (strong-apply/apply/maybe/skip), `matchReason` (2-3 sentences), `missingSkills` (array), `keyMatchingSkills` (array), `experienceFit` (under-qualified/good-fit/over-qualified).
+- **User message**: Contains the job title, company, description, and the candidate's resume text. References resume via `$('Set Job Preferences').first().json.resumeText`.
 
-### Node 7: Parse AI Scores
+### Node 7: Parse AI Score
 - **Type**: `n8n-nodes-base.code` (v2)
-- **ID**: `parseScores`
+- **ID**: `parseScore`
 
-**Code summary**: Parses the GPT-5 JSON response. Extracts `score`, `recommendation`, `matchReason`, and `missingSkills`. Falls back to regex extraction if the response is not clean JSON. Merges parsed fields with the original job data.
+**Code summary**: Parses the GPT-5 JSON response with try/catch. Falls back to regex extraction (`/\{[\s\S]*\}/`) if the response is wrapped in markdown code blocks. Merges parsed score fields with the original job data from `$('Filter Duplicates').item`. Output includes all original job fields plus score, recommendation, matchReason, missingSkills, keyMatchingSkills.
 
 ### Node 8: Filter Top Matches
-- **Type**: `n8n-nodes-base.if` (v2)
+- **Type**: `n8n-nodes-base.code` (v2)
 - **ID**: `filterMatches`
 
-**Condition**: `{{ $json.score }}` is greater than or equal to `70`
+**Code summary**: Returns the item if `score >= minScore` (default 70), otherwise returns empty `[]`. Jobs below threshold are silently dropped, saving API costs on cover letter generation.
 
-- **True output** (score >= 70): Continues to cover letter generation
-- **False output** (score < 70): Discarded (not saved or emailed)
-
-### Node 9: Generate Cover Letter
+### Node 9: Generate Cover Letter (GPT-5)
 - **Type**: `n8n-nodes-base.openAi` (v1)
 - **ID**: `generateCoverLetter`
 - **Credential**: OpenAI API
 
 **Parameters**:
 - **Model**: GPT-5
-- **System prompt**: Instructs GPT-5 to write a concise, professional cover letter (250-350 words) tailored to the specific job. References specific skills from the resume that match the job requirements. Uses a confident but not arrogant tone.
-- **User message**: Contains the job title, company, job description, match reasoning, and the candidate's resume.
+- **System prompt**: Instructs GPT-5 to write a concise, professional cover letter (250-350 words) tailored to the specific job. References specific skills from the resume that match the job requirements. Addresses to "Hiring Manager" at the company. Focuses on .NET, React, backend architecture, and job-specific technologies. Responds with ONLY the cover letter text (no JSON, no markdown).
+- **User message**: Contains the job title, company, job description, key matching skills, and the candidate's resume.
 
-### Node 10: Format for Sheets
+### Node 10: Attach Cover Letter
 - **Type**: `n8n-nodes-base.code` (v2)
-- **ID**: `formatSheets`
+- **ID**: `addCoverLetter`
 
-**Code summary**: Formats each job match into a row for Google Sheets. Maps fields to columns:
-- Date: current date (YYYY-MM-DD)
-- Job Title: from parsed job data
-- Company: from parsed job data
-- Location: from parsed job data
-- Match Score: from AI scoring
-- Recommendation: from AI scoring
-- Match Reason: from AI scoring
-- Missing Skills: from AI scoring
-- Apply Link: from parsed job data
-- Cover Letter: from GPT-5 generation
-- Status: "New" (default)
-- Applied Date: empty (to be filled manually)
+**Code summary**: Merges the GPT-5 cover letter text with the existing job data. Extracts the cover letter from the OpenAI response (`content` or `message.content`). Outputs the combined object with all job fields plus `coverLetter`.
 
 ### Node 11: Save to Google Sheets
 - **Type**: `n8n-nodes-base.googleSheets` (v4.5)
-- **ID**: `saveToSheets`
+- **ID**: `saveToSheet`
 - **Credential**: Google Sheets OAuth2 API
 
 **Parameters**:
-- **Operation**: Append Row
+- **Operation**: `appendOrUpdate`
 - **Document ID**: Your spreadsheet ID (SETUP REQUIRED)
 - **Sheet Name**: `Sheet1`
-- **Mapping Mode**: Map each column manually to the corresponding field
+- **Mapping Mode**: `defineBelow` -- maps each column manually to the corresponding field
+- **Resource locator**: Uses `__rl: true` with `mode: "id"` format
+
+**12 columns mapped**: Date, Job Title, Company, Location, Match Score, Recommendation, Match Reason, Missing Skills, Apply Link, Cover Letter, Status ("Not Applied"), Applied Date (empty)
 
 **SETUP REQUIRED**: Replace the Document ID with your actual Google Sheet spreadsheet ID.
 
 ### Node 12: Build Email Digest
 - **Type**: `n8n-nodes-base.code` (v2)
-- **ID**: `buildDigest`
+- **ID**: `buildEmail`
 
 **Code summary**: Builds an HTML email summarizing all top matches from this run. Includes:
-- Run date and total jobs found
-- Table of matches with: Job Title, Company, Location, Score, Recommendation
-- Direct apply links for each job
+- Gradient header (#667eea to #764ba2) with title
+- Stats section showing total matches and top score
+- Job table with color-coded scores: green (>=85), yellow (>=70), red (<70)
+- Apply buttons as HTML links for each job
+- Expandable cover letters using `<details>` HTML tags
 - Link to the Google Sheet for full details
+- Outputs `{ html, matchCount, topScore }`
 
-### Node 13: Send Gmail Notification
+### Node 13: Send Gmail Digest
 - **Type**: `n8n-nodes-base.gmail` (v2.1)
-- **ID**: `sendEmail`
+- **ID**: `sendDigest`
 - **Credential**: Gmail OAuth2 API
 
 **Parameters**:
-- **To**: Your email address
-- **Subject**: `Job Search Digest - {{ $now.format('yyyy-MM-dd') }} - {{ $json.matchCount }} matches`
-- **Email Type**: HTML
+- **Operation**: `send` (REQUIRED -- missing this causes validation failure)
+- **To**: Your email address (from Set Job Preferences `yourEmail`)
+- **Subject**: `Job Search Update: {{ matchCount }} new matches found (Top: {{ topScore }}/100)`
+- **Email Type**: `html`
 - **Message**: HTML digest from Build Email Digest node
 
-### Node 14: Done Output
+### Node 14: Success Summary
 - **Type**: `n8n-nodes-base.code` (v2)
-- **ID**: `doneOutput`
+- **ID**: `successOutput`
 
 **Code summary**: Returns a summary object with:
-- `totalJobsFound`: Number of jobs returned by SerpAPI
-- `duplicatesRemoved`: Number of duplicate jobs filtered
-- `jobsScored`: Number of jobs sent to GPT-5 for scoring
-- `topMatches`: Number of jobs with score >= 70
-- `coverLettersGenerated`: Number of cover letters written
-- `sheetRowsAdded`: Number of rows appended to Google Sheet
+- `success`: true
+- `matchCount`: Number of jobs with score >= 70
+- `topScore`: Highest match score found
 - `emailSent`: Boolean indicating digest email was sent
 - `timestamp`: ISO timestamp of completion
 
@@ -221,59 +216,59 @@ Manual Trigger
 Source Node                  -> Target Node                  | Type
 --------------------------------------------------------------------------------
 Manual Trigger               -> Set Job Preferences           | main
-Set Job Preferences          -> Search Google Jobs            | main
-Search Google Jobs           -> Parse Job Results             | main
+Set Job Preferences          -> Search Google Jobs (SerpAPI)  | main
+Search Google Jobs (SerpAPI) -> Parse Job Results             | main
 Parse Job Results            -> Filter Duplicates             | main
-Filter Duplicates            -> Score Job Match               | main
-Score Job Match              -> Parse AI Scores               | main
-Parse AI Scores              -> Filter Top Matches            | main
-Filter Top Matches           -> Generate Cover Letter         | main (true)
-Generate Cover Letter        -> Format for Sheets             | main
-Format for Sheets            -> Save to Google Sheets         | main
+Filter Duplicates            -> Score & Match (GPT-5)         | main
+Score & Match (GPT-5)        -> Parse AI Score                | main
+Parse AI Score               -> Filter Top Matches            | main
+Filter Top Matches           -> Generate Cover Letter (GPT-5) | main
+Generate Cover Letter (GPT-5)-> Attach Cover Letter           | main
+Attach Cover Letter          -> Save to Google Sheets         | main
 Save to Google Sheets        -> Build Email Digest            | main
-Build Email Digest           -> Send Gmail Notification       | main
-Send Gmail Notification      -> Done Output                   | main
+Build Email Digest           -> Send Gmail Digest             | main
+Send Gmail Digest            -> Success Summary               | main
 ```
 
 ## Required Credentials
 
 | # | Credential Name | Type | Where to Get | Used By |
 |---|---|---|---|---|
-| 1 | SerpAPI | API Key (query param) | serpapi.com -> Dashboard -> API Key | Search Google Jobs |
-| 2 | OpenAI API | API Key | platform.openai.com -> API Keys | Score Job Match, Generate Cover Letter |
+| 1 | SerpAPI | API Key (query param) | serpapi.com -> Dashboard -> API Key | Search Google Jobs (SerpAPI) |
+| 2 | OpenAI API | API Key | platform.openai.com -> API Keys | Score & Match (GPT-5), Generate Cover Letter (GPT-5) |
 | 3 | Google Sheets OAuth2 | OAuth2 | Google Cloud Console -> Sheets API -> OAuth2 | Save to Google Sheets |
-| 4 | Gmail OAuth2 | OAuth2 | Google Cloud Console -> Gmail API -> OAuth2 (same project as Sheets) | Send Gmail Notification |
+| 4 | Gmail OAuth2 | OAuth2 | Google Cloud Console -> Gmail API -> OAuth2 (same project as Sheets) | Send Gmail Digest |
 
 ## Google Sheet Schema
 
 | Column | Header | Source | Example |
 |---|---|---|---|
-| A | Date | Format for Sheets node | 2026-02-09 |
+| A | Date | Attach Cover Letter node | 2026-02-09 |
 | B | Job Title | SerpAPI result | Senior Backend Developer |
 | C | Company | SerpAPI result | Microsoft |
-| D | Location | SerpAPI result | Redmond, WA |
+| D | Location | SerpAPI result | Bengaluru, India |
 | E | Match Score | GPT-5 scoring | 87 |
-| F | Recommendation | GPT-5 scoring | Strong Match |
+| F | Recommendation | GPT-5 scoring | strong-apply |
 | G | Match Reason | GPT-5 scoring | 8+ years .NET, distributed systems experience... |
 | H | Missing Skills | GPT-5 scoring | Azure Kubernetes Service, Terraform |
 | I | Apply Link | SerpAPI result | https://careers.microsoft.com/... |
 | J | Cover Letter | GPT-5 generation | Dear Hiring Manager, I am writing to express... |
-| K | Status | Default value | New |
+| K | Status | Default value | Not Applied |
 | L | Applied Date | Manual entry | (empty until you apply) |
 
 ## Modification Guide
 
 | What | How |
 |---|---|
-| Change target job titles | Edit "Set Job Preferences" node -- update the `targetRoles` array |
-| Change location | Edit "Set Job Preferences" node -- update `targetLocation` (e.g., `"San Francisco, CA"`, `"Remote"`, `"London, UK"`) |
+| Change target job titles | Edit "Set Job Preferences" node -- update the role titles in searchQuery |
+| Change location | Edit "Set Job Preferences" node -- update `location` value (e.g., `"San Francisco, CA"`, `"Remote"`, `"London, UK"`) |
 | Change minimum match score | Edit "Filter Top Matches" node -- change the condition threshold from 70 to your desired minimum |
 | Switch to daily schedule | Replace "Manual Trigger" with "Schedule Trigger" node, cron: `0 9 * * *` for daily at 9 AM |
 | Add more job sources | Add HTTP Request nodes for Indeed API, LinkedIn API, etc. Merge results before Filter Duplicates using a Merge node |
-| Change AI model | Edit "Score Job Match" and "Generate Cover Letter" nodes -- update the model parameter (e.g., `gpt-4o`, `gpt-5`) |
-| Change email recipient | Edit "Send Gmail Notification" node -- update the To field |
-| Add Slack notifications | Add a Slack node after "Send Gmail Notification" -- post digest to a channel |
-| Change cover letter style | Edit "Generate Cover Letter" system prompt -- adjust tone, length, or format |
+| Change AI model | Edit "Score & Match (GPT-5)" and "Generate Cover Letter (GPT-5)" nodes -- update the model parameter (e.g., `gpt-4o`, `gpt-5`) |
+| Change email recipient | Edit "Set Job Preferences" node -- update `yourEmail` field |
+| Add Slack notifications | Add a Slack node after "Send Gmail Digest" -- post digest to a channel |
+| Change cover letter style | Edit "Generate Cover Letter (GPT-5)" system prompt -- adjust tone, length, or format |
 | Lower API costs | Use `gpt-4o-mini` instead of GPT-5 for scoring (less accurate but ~10x cheaper) |
 | Increase job results | Add `num` parameter to SerpAPI query (default: 10, max: 100 per search) |
 | Track application status | Use the "Status" and "Applied Date" columns in Google Sheet -- update manually or add a form |
