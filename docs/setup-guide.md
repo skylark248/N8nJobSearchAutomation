@@ -3,7 +3,7 @@
 ## Prerequisites
 - n8n running locally in Docker at http://localhost:5678
 - SerpAPI account (free tier: 100 searches/month)
-- OpenAI account with API billing enabled
+- Google Gemini API key (free tier: 15 RPM, 1M tokens/day)
 - Google account with Sheets and Gmail access
 - Your resume in plain text format
 
@@ -44,39 +44,39 @@ Should return JSON with job listings.
 
 ---
 
-## Credential 2: OpenAI API
+## Credential 2: Google Gemini API
 
-**Used by**: Score Job Match (GPT-5), Generate Cover Letter (GPT-5)
+**Used by**: Score & Match (Gemini), Generate Cover Letter (Gemini)
 
 ### Get API Key
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Sign in (same account as ChatGPT, but API billing is separate)
-3. Click **"API keys"** in the left sidebar
-4. Click **"Create new secret key"**
-5. Copy the key (starts with `sk-...`) -- you won't see it again
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+2. Sign in with your Google account
+3. Click **"Create API Key"**
+4. Select a Google Cloud project (or create a new one)
+5. Copy the generated API key
 
-### Add Billing
-1. Go to platform.openai.com -> **Settings** -> **Billing**
-2. Click **"Add payment method"**
-3. Add $10-20 to start (prepaid credits, pay-per-use)
-4. This is separate from your ChatGPT subscription
+### Free Tier Limits
+- **15 requests per minute** (RPM)
+- **1 million tokens per day**
+- **No credit card required**
+- More than enough for 30 daily runs (~25 Gemini calls per run)
 
 ### Add to n8n
 1. Open your imported workflow in n8n
-2. Click on the **"Score Job Match"** node
-3. Click **"Credential to connect with"** -> **"Create New Credential"**
-4. Select **"OpenAI API"**
-5. Paste your API key
-6. Click **"Save"**
-7. The same credential will be available for the **"Generate Cover Letter"** node -- assign it there too
+2. Click on the **"Set Job Preferences"** node
+3. Find the `geminiApiKey` field in the code
+4. Replace `YOUR_GEMINI_API_KEY` with your actual API key
+5. Save the workflow
+
+The API key is passed as a query parameter to the Gemini HTTP Request nodes automatically.
 
 ### Verify
 ```bash
-curl https://api.openai.com/v1/models \
-  -H "Authorization: Bearer sk-your-key-here" \
-  | head -20
+curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"contents":[{"parts":[{"text":"Hello"}]}]}'
 ```
-Should return a list of available models.
+Should return a JSON response with generated text.
 
 ---
 
@@ -252,7 +252,7 @@ Default target roles:
 ### Verify
 - [ ] SerpAPI returned job listings (check Search Google Jobs node output)
 - [ ] Jobs were parsed and deduplicated (check Filter Duplicates node output)
-- [ ] GPT-5 scored each job with a match score (check Score Job Match node output)
+- [ ] Gemini scored each job with a match score (check Score & Match node output)
 - [ ] Top matches (score >= 70) were filtered (check Filter Top Matches node output)
 - [ ] Cover letters were generated for top matches (check Generate Cover Letter output)
 - [ ] Results appeared in your Google Sheet with all columns populated
@@ -270,7 +270,7 @@ Default target roles:
 | # | Credential | Type | Nodes Using It | Cost |
 |---|---|---|---|---|
 | 1 | SerpAPI | API Key (query param) | Search Google Jobs | Free (100/mo) |
-| 2 | OpenAI API | API Key | Score Job Match, Generate Cover Letter | ~$0.45/run |
+| 2 | Google Gemini API | API Key (in Set Job Preferences) | Score & Match, Generate Cover Letter | Free (15 RPM, 1M tokens/day) |
 | 3 | Google OAuth2 (Sheets) | OAuth2 | Save to Google Sheets | Free |
 | 3 | Google OAuth2 (Gmail) | OAuth2 | Send Gmail Notification | Free |
 
@@ -283,10 +283,10 @@ Default target roles:
 - Check you haven't exceeded the 100 searches/month free tier
 - Make sure the key is in the URL query parameter, not in a header
 
-### "Invalid API key" on OpenAI nodes
-- Verify the key at platform.openai.com -> API Keys
-- Check you have billing credits remaining
-- Make sure you're using the API key, not the ChatGPT session token
+### "Invalid API key" on Gemini nodes
+- Verify the key at aistudio.google.com/apikey
+- Make sure the key is in the `geminiApiKey` field in Set Job Preferences
+- Check you haven't exceeded the 15 RPM rate limit
 
 ### "OAuth token expired" on Google Sheets or Gmail
 - Go to the credential in n8n -> click "Sign in with Google" again
@@ -382,7 +382,7 @@ curl -X POST \
 
 On the new instance, you must:
 - [ ] Add SerpAPI key to the Search Google Jobs node query parameter
-- [ ] Create and assign **OpenAI API** credential
+- [ ] Add **Gemini API key** in Set Job Preferences node
 - [ ] Create and assign **Google Sheets OAuth2** credential
 - [ ] Create and assign **Gmail OAuth2** credential
 - [ ] Update the **Google Sheet spreadsheet ID** in the Save to Google Sheets node

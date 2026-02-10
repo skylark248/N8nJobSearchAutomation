@@ -127,14 +127,14 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 - **Documentation**: See `docs/workflow-reference.md` for full node-by-node breakdown
 - **Setup Guide**: See `docs/setup-guide.md` for credential configuration
 
-**Pipeline**: Search Google Jobs (SerpAPI) -> Parse results -> Filter duplicates -> GPT-5 scores each job against resume (0-100) -> Filter top matches (score >= 70) -> Generate tailored cover letters -> Save to Google Sheets -> Send Gmail digest email
+**Pipeline**: Search Google Jobs (SerpAPI) -> Parse results -> Filter duplicates -> Gemini 2.0 Flash scores each job against resume (0-100) -> Filter top matches (score >= 70) -> Generate tailored cover letters -> Save to Google Sheets -> Send Gmail digest email
 
 **Required Credentials** (configure in n8n before running):
 1. **SerpAPI** - API key as query parameter for Google Jobs search (free tier: 100 searches/month)
-2. **OpenAI API** - for GPT-5 job scoring and cover letter generation
+2. **Google Gemini API** - free API key from https://aistudio.google.com/apikey for Gemini 2.0 Flash (job scoring + cover letters). Free tier: 15 RPM, 1M tokens/day.
 3. **Google OAuth2** - for Google Sheets (saving results) and Gmail (digest email). Enable both Sheets API and Gmail API in Google Cloud Console. Redirect URI: `http://localhost:5678/rest/oauth2-credential/callback`
 
-**Monthly Cost**: ~$13.50 (OpenAI API) + $0 (SerpAPI free tier) + $0 (Google APIs)
+**Monthly Cost**: ~$0 (all free tiers) -- Gemini 2.0 Flash free + SerpAPI free + Google APIs free
 
 ### Complete Node List (14 nodes)
 
@@ -145,10 +145,10 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 | 3 | Search Google Jobs (SerpAPI) | `n8n-nodes-base.httpRequest` | v4.2 | `searchJobs` | GET serpapi.com/search.json with engine=google_jobs |
 | 4 | Parse Job Results | `n8n-nodes-base.code` | v2 | `parseJobs` | Extract jobs_results, normalize fields, generate jobId hash |
 | 5 | Filter Duplicates | `n8n-nodes-base.code` | v2 | `filterDuplicates` | Dedup by company+title, output individual items |
-| 6 | Score & Match (GPT-5) | `n8n-nodes-base.openAi` | v1 | `scoreMatch` | Score 0-100 + recommendation + matchReason + missingSkills |
-| 7 | Parse AI Score | `n8n-nodes-base.code` | v2 | `parseScore` | Parse GPT-5 JSON with fallback regex, merge with job data |
+| 6 | Score & Match (Gemini) | `n8n-nodes-base.httpRequest` | v4.2 | `scoreMatch` | POST Gemini 2.0 Flash API, score 0-100 + recommendation |
+| 7 | Parse AI Score | `n8n-nodes-base.code` | v2 | `parseScore` | Parse Gemini JSON response, merge with job data |
 | 8 | Filter Top Matches | `n8n-nodes-base.code` | v2 | `filterMatches` | Keep only score >= minScore (default 70) |
-| 9 | Generate Cover Letter (GPT-5) | `n8n-nodes-base.openAi` | v1 | `generateCoverLetter` | Tailored cover letter under 300 words per job |
+| 9 | Generate Cover Letter (Gemini) | `n8n-nodes-base.httpRequest` | v4.2 | `generateCoverLetter` | POST Gemini 2.0 Flash API, cover letter under 300 words |
 | 10 | Attach Cover Letter | `n8n-nodes-base.code` | v2 | `attachCoverLetter` | Merge cover letter text with job data |
 | 11 | Save to Google Sheets | `n8n-nodes-base.googleSheets` | v4.5 | `saveToSheet` | Append row with 12 columns to Job Tracker sheet |
 | 12 | Build Email Digest | `n8n-nodes-base.code` | v2 | `buildEmail` | HTML email with gradient header, stats, job table, cover letters |
@@ -162,8 +162,8 @@ Manual Trigger           -> Set Job Preferences       (main)
 Set Job Preferences      -> Search Google Jobs         (main)
 Search Google Jobs       -> Parse Job Results          (main)
 Parse Job Results        -> Filter Duplicates          (main)
-Filter Duplicates        -> Score & Match (GPT-5)      (main)
-Score & Match (GPT-5)    -> Parse AI Score             (main)
+Filter Duplicates        -> Score & Match (Gemini)      (main)
+Score & Match (Gemini)    -> Parse AI Score             (main)
 Parse AI Score           -> Filter Top Matches         (main)
 Filter Top Matches       -> Generate Cover Letter      (main)
 Generate Cover Letter    -> Attach Cover Letter        (main)
@@ -193,14 +193,17 @@ Send Gmail Digest        -> Success Summary            (main)
 - Extracts `applyLink` from `apply_options[0].link` or `share_link`
 - Truncates `description` to 3000 chars for GPT-5 context window
 
-**Score & Match** (OpenAI node):
-- Model: GPT-5
-- System prompt: Job matching expert, returns JSON with score/matchReason/missingSkills/keyMatchingSkills/experienceFit/recommendation
+**Score & Match (Gemini)** (HTTP Request):
+- POST `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`
+- API key passed as query parameter from Set Job Preferences
+- System instruction: Job matching expert, returns JSON with score/matchReason/missingSkills/keyMatchingSkills/experienceFit/recommendation
+- Uses `responseMimeType: "application/json"` to force structured JSON output
 - User message references resume via `$('Set Job Preferences').first().json.resumeText`
+- Timeout: 30000ms
 
 **Parse AI Score** (Code node):
-- Parses GPT-5 response with try/catch
-- Fallback regex: `/\{[\s\S]*\}/` to extract JSON from markdown-wrapped responses
+- Reads Gemini response from `candidates[0].content.parts[0].text`
+- Parses JSON with try/catch + fallback regex
 - Merges parsed fields with original job data from `$('Filter Duplicates').item`
 
 **Filter Top Matches** (Code node):
@@ -248,6 +251,7 @@ These values in the exported JSON need to be replaced before running:
 | Placeholder | Where | Replace With |
 |---|---|---|
 | `YOUR_SERPAPI_KEY` | Search Google Jobs node, query param `api_key` | Your SerpAPI API key from serpapi.com/dashboard |
+| `YOUR_GEMINI_API_KEY` | Set Job Preferences node, `geminiApiKey` field | Your Gemini API key from https://aistudio.google.com/apikey |
 | `YOUR_EMAIL@gmail.com` | Set Job Preferences node, `yourEmail` field | Your Gmail address |
 | `YOUR_GOOGLE_SHEET_ID` | Set Job Preferences node + Save to Google Sheets node | Spreadsheet ID from Google Sheets URL |
 | `PASTE YOUR RESUME TEXT HERE` | Set Job Preferences node, `resumeText` field | Your full resume as plain text |
@@ -324,13 +328,14 @@ Runs weekday mornings at 9 AM. Use cron `0 9 * * 1-5` for weekdays only.
 | Service | Per Run | Monthly (30 runs) |
 |---|---|---|
 | SerpAPI (1 search/run) | $0.00 | $0.00 (free tier: 100/mo) |
-| GPT-5 scoring (~20 jobs) | ~$0.30 | ~$9.00 |
-| GPT-5 cover letters (~5 jobs) | ~$0.15 | ~$4.50 |
+| Gemini 2.0 Flash scoring (~20 jobs) | $0.00 | $0.00 (free tier: 15 RPM, 1M tokens/day) |
+| Gemini 2.0 Flash cover letters (~5 jobs) | $0.00 | $0.00 (free tier) |
 | Google Sheets + Gmail | $0.00 | $0.00 |
-| **Total** | **~$0.45** | **~$13.50** |
+| **Total** | **$0.00** | **$0.00** |
 
 ## Version History
 
+- **v2.0** (2026-02-09): Replaced GPT-5 with Google Gemini 2.0 Flash for job scoring and cover letter generation. Monthly cost reduced from ~$13.50 to $0. Added `geminiApiKey` to Set Job Preferences. HTTP Request nodes call Gemini API directly with `responseMimeType: "application/json"` for structured scoring output.
 - **v1.0** (2026-02-09): Initial creation. 14 nodes, manual trigger. SerpAPI Google Jobs + GPT-5 scoring + cover letter generation + Google Sheets + Gmail digest. Target: Backend/.NET/React developer roles in India.
 
 ## Development History

@@ -2,9 +2,9 @@
 
 Automated pipeline that searches for jobs matching your resume, scores them with AI, generates tailored cover letters, and delivers a daily digest -- fully hands-free.
 
-**Pipeline:** Search Google Jobs (SerpAPI) -> Parse results -> Filter duplicates -> GPT-5 scores each job against resume (0-100) -> Filter top matches (score >= 70) -> Generate tailored cover letters -> Save to Google Sheets -> Send Gmail digest email
+**Pipeline:** Search Google Jobs (SerpAPI) -> Parse results -> Filter duplicates -> Gemini 2.0 Flash scores each job against resume (0-100) -> Filter top matches (score >= 70) -> Generate tailored cover letters -> Save to Google Sheets -> Send Gmail digest email
 
-**Cost:** ~$0.45 per run (~$13.50/month for daily runs)
+**Cost:** $0 (all free tiers)
 
 ---
 
@@ -26,7 +26,7 @@ Parse & Normalize Results (extract title, company, location, link)
 Filter Duplicates (deduplicate by company + title)
     |
     v
-GPT-5 scores each job against your resume (0-100 match score)
+Gemini 2.0 Flash scores each job against your resume (0-100 match score)
     |
     v
 Parse AI Scores (extract score, recommendation, reasoning, missing skills)
@@ -35,7 +35,7 @@ Parse AI Scores (extract score, recommendation, reasoning, missing skills)
 Filter Top Matches (score >= 70 only)
     |
     v
-Generate Tailored Cover Letters (GPT-5, one per job)
+Generate Tailored Cover Letters (Gemini 2.0 Flash, one per job)
     |
     v
 Format for Google Sheets (add date, status columns)
@@ -62,7 +62,7 @@ Before you start, make sure you have:
 - **Docker** installed ([Get Docker](https://docs.docker.com/get-docker/))
 - **Git** installed ([Get Git](https://git-scm.com/downloads))
 - **SerpAPI account** (free tier: 100 searches/month) -- [serpapi.com](https://serpapi.com)
-- **OpenAI account** with API billing enabled ($10-20 to start) -- [platform.openai.com](https://platform.openai.com)
+- **Google Gemini API key** (free, no billing required) -- [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 - **Google account** with Google Sheets and Gmail access
 - **Your resume** in plain text format
 
@@ -112,7 +112,7 @@ You need 3 credentials. All are configured **inside n8n** (not in code):
 | # | Credential | Where to Get | Cost |
 |---|---|---|---|
 | 1 | **SerpAPI Key** | [serpapi.com](https://serpapi.com) -> Dashboard -> API Key | Free (100/mo) |
-| 2 | **OpenAI API Key** | [platform.openai.com](https://platform.openai.com) -> API Keys | ~$13.50/mo |
+| 2 | **Gemini API Key** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) -> Create API Key | Free (15 RPM) |
 | 3 | **Google OAuth2** | [Google Cloud Console](https://console.cloud.google.com) -> Sheets API + Gmail API | Free |
 
 **Step-by-step instructions for each credential:** See [docs/setup-guide.md](docs/setup-guide.md)
@@ -175,11 +175,11 @@ You need 3 credentials. All are configured **inside n8n** (not in code):
 | Service | Per Run | Monthly (30 runs) |
 |---|---|---|
 | SerpAPI (job searches) | $0.00 | $0.00 (free tier: 100/mo) |
-| GPT-5 (job scoring) | $0.30 | $9.00 |
-| GPT-5 (cover letters) | $0.15 | $4.50 |
+| Gemini 2.0 Flash (job scoring) | $0.00 | $0.00 (free tier: 15 RPM, 1M tokens/day) |
+| Gemini 2.0 Flash (cover letters) | $0.00 | $0.00 (free tier) |
 | Google Sheets API | $0.00 | $0.00 |
 | Gmail API | $0.00 | $0.00 |
-| **Total** | **~$0.45** | **~$13.50** |
+| **Total** | **$0.00** | **$0.00** |
 
 ---
 
@@ -208,7 +208,7 @@ The workflow searches for these roles by default (configurable in the Set Job Pr
 | Change minimum match score | Edit "Filter Top Matches" node -- change threshold from 70 |
 | Switch to daily schedule | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *` for daily 9 AM) |
 | Add more job sources | Add HTTP Request nodes for LinkedIn, Indeed, or other APIs before the dedup step |
-| Change AI model | Edit "Score Job Match" and "Generate Cover Letter" nodes -- update model parameter |
+| Change AI model | Edit "Score & Match (Gemini)" and "Generate Cover Letter (Gemini)" nodes -- update the Gemini model in the URL |
 | Change email format | Edit "Build Email Digest" node -- modify HTML template |
 | Add Slack notifications | Add Slack node after Gmail notification |
 
@@ -260,7 +260,7 @@ Then Claude Code can create, modify, validate, and deploy n8n workflows conversa
 | Error | Fix |
 |---|---|
 | "Invalid API key" on SerpAPI | Verify key at serpapi.com/dashboard, check free tier quota remaining |
-| "Invalid API key" on OpenAI | Check key at platform.openai.com, verify billing credits |
+| "Invalid API key" on Gemini | Check key at aistudio.google.com/apikey, verify it's in Set Job Preferences |
 | "Access blocked" on Google OAuth | Add yourself as test user: Google Cloud Console -> OAuth consent screen -> Audience -> Add Users |
 | "This app isn't verified" | Click Advanced -> "Go to n8n (unsafe)" -- this is your own app, safe to proceed |
 | "Redirect URI mismatch" | Verify URI is exactly `http://localhost:5678/rest/oauth2-credential/callback` |
