@@ -1,3 +1,10 @@
+# Resumes (sensitive personal data)
+resumes/*.txt
+resumes/*.md
+resumes/*.pdf
+!resumes/README.txt
+!resumes/.gitkeep
+
 # Raw workflow backups with credential IDs
 exports/*-raw-backup.json
 exports/*-with-creds.json

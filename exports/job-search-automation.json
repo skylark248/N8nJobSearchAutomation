@@ -7,10 +7,39 @@
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        -600,
+        -608,
         0
       ],
       "parameters": {}
+    },
+    {
+      "id": "readResumePdf",
+      "name": "Read Resume PDF",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        -1008,
+        0
+      ],
+      "parameters": {
+        "filePath": "/home/node/.n8n-files/your-resume.pdf"
+      }
+    },
+    {
+      "id": "extractPdfText",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -800,
+        0
+      ],
+      "parameters": {
+        "operation": "pdf",
+        "options": {
+          "joinPages": true
+        }
+      }
     },
     {
       "id": "setPreferences",
@@ -22,7 +51,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// === EDIT THESE SETTINGS ===\nconst config = {\n  searchQuery: '\"Backend Developer\" OR \"Senior Backend Developer\" OR \".NET Developer\" OR \"Full Stack Developer\" OR \"Software Engineer 2\" OR \"SDE 2\" OR \"Senior Software Engineer\" OR \"Senior Full Stack Developer\" OR \".NET Developer\"',\n  location: 'Bangalore, Karnataka, India',\n  locationFilter: 'remote OR hybrid OR onsite',\n  minScore: 70,\n  maxResults: 20,\n  yourEmail: 'YOUR_EMAIL@gmail.com',\n  spreadsheetId: 'YOUR_GOOGLE_SHEET_ID',\n  geminiApiKey: 'YOUR_GEMINI_API_KEY',\n  // Paste your resume text below (or use Google Drive PDF extraction)\n  resumeText: `PASTE YOUR RESUME TEXT HERE\n\nReplace this with your actual resume content.\nThe AI will use this to score job matches and generate cover letters.\n\nSkills: .NET, C#, React, JavaScript, TypeScript, SQL Server, Azure, REST APIs, etc.\nExperience: X years of backend/full-stack development.\n`\n};\n\nreturn { json: config };"
+        "jsCode": "// === READ RESUME FROM PDF ===\nconst resumeText = $input.first().json.text;\n\nif (!resumeText || resumeText.trim().length < 50) {\n  throw new Error('Resume PDF appears empty or too short. Make sure you placed a valid PDF resume in the resumes/ folder.');\n}\n\n// === EDIT THESE SETTINGS ===\nconst baseConfig = {\n  minScore: 50,\n  maxResults: 25,\n  yourEmail: 'YOUR_EMAIL@gmail.com',\n  spreadsheetId: 'YOUR_GOOGLE_SHEET_ID',\n  geminiApiKey: 'YOUR_GEMINI_API_KEY',\n  serpApiKey: 'YOUR_SERPAPI_KEY',\n  resumeText: resumeText.trim()\n};\n\nconst roles = '\"Backend Developer\" OR \"Senior Backend Developer\" OR \".NET Developer\" OR \"Full Stack Developer\" OR \"Software Engineer 2\" OR \"SDE 2\" OR \"Senior Software Engineer\" OR \"Senior Full Stack Developer\" OR \"C# Developer\" OR \"ASP.NET Developer\" OR \"Software Engineer\" OR \"Backend Engineer\" OR \"Application Developer\" OR \"Software Developer\" OR \"AI Platform Engineer\" OR \"Backend Engineer AI\" OR \"Gen AI Engineer\"';\n\n// Two searches: Bangalore onsite/hybrid + India remote\nreturn [\n  { json: { ...baseConfig, searchQuery: roles + ' onsite OR hybrid', location: 'Bangalore, Karnataka, India' } },\n  { json: { ...baseConfig, searchQuery: roles + ' remote', location: 'India' } }\n];"
       }
     },
     {
@@ -31,7 +60,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -200,
+        -208,
         0
       ],
       "parameters": {
@@ -53,11 +82,11 @@
             },
             {
               "name": "chips",
-              "value": "date_posted:today"
+              "value": "date_posted:week"
             },
             {
               "name": "api_key",
-              "value": "YOUR_SERPAPI_KEY"
+              "value": "={{ $json.serpApiKey }}"
             }
           ]
         },
@@ -76,7 +105,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "const response = $input.first().json;\nconst jobs = response.jobs_results || [];\nconst config = $('Set Job Preferences').first().json;\n\nif (jobs.length === 0) {\n  throw new Error('No jobs found. Try broadening your search query or changing location.');\n}\n\nconst parsed = jobs.slice(0, config.maxResults || 20).map(job => {\n  const raw = (job.company_name || '') + '|' + (job.title || '');\n  let hash = 0;\n  for (let i = 0; i < raw.length; i++) {\n    const char = raw.charCodeAt(i);\n    hash = ((hash << 5) - hash) + char;\n    hash = hash & hash;\n  }\n  const jobId = 'JOB_' + Math.abs(hash).toString(36);\n\n  let applyLink = '';\n  if (job.apply_options && job.apply_options.length > 0) {\n    applyLink = job.apply_options[0].link || '';\n  } else if (job.share_link) {\n    applyLink = job.share_link;\n  }\n\n  return {\n    jobId,\n    title: job.title || 'Unknown Title',\n    company: job.company_name || 'Unknown Company',\n    location: job.location || 'Not specified',\n    description: (job.description || '').substring(0, 3000),\n    postedDate: job.detected_extensions?.posted_at || 'Unknown',\n    applyLink,\n    source: job.via || 'Google Jobs',\n    salary: job.detected_extensions?.salary || 'Not listed',\n    schedule: job.detected_extensions?.schedule_type || ''\n  };\n});\n\nreturn { json: { jobs: parsed, totalFound: jobs.length } };"
+        "jsCode": "const allItems = $input.all();\nconst config = $('Set Job Preferences').first().json;\nlet allJobs = [];\n\nfor (const item of allItems) {\n  const jobs = item.json.jobs_results || [];\n  const parsed = jobs.slice(0, config.maxResults || 20).map(job => {\n    const raw = (job.company_name || '') + '|' + (job.title || '');\n    let hash = 0;\n    for (let i = 0; i < raw.length; i++) {\n      const char = raw.charCodeAt(i);\n      hash = ((hash << 5) - hash) + char;\n      hash = hash & hash;\n    }\n    const jobId = 'JOB_' + Math.abs(hash).toString(36);\n\n    let applyLink = '';\n    if (job.apply_options && job.apply_options.length > 0) {\n      applyLink = job.apply_options[0].link || '';\n    } else if (job.share_link) {\n      applyLink = job.share_link;\n    }\n\n    return {\n      jobId,\n      title: job.title || 'Unknown Title',\n      company: job.company_name || 'Unknown Company',\n      location: job.location || 'Not specified',\n      description: (job.description || '').substring(0, 3000),\n      postedDate: job.detected_extensions?.posted_at || 'Unknown',\n      applyLink,\n      source: job.via || 'Google Jobs',\n      salary: job.detected_extensions?.salary || 'Not listed',\n      schedule: job.detected_extensions?.schedule_type || ''\n    };\n  });\n  allJobs.push(...parsed);\n}\n\nif (allJobs.length === 0) {\n  throw new Error('No jobs found. Try broadening your search query or changing location.');\n}\n\nreturn { json: { jobs: allJobs, totalFound: allJobs.length } };"
       }
     },
     {
@@ -85,7 +114,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        200,
+        208,
         0
       ],
       "parameters": {
@@ -101,9 +130,12 @@
         400,
         0
       ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -124,9 +156,15 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: 'You are a job matching expert for software engineering roles. You analyze job descriptions against a candidate\\'s resume and provide a precise compatibility score. Always respond with valid JSON only, no markdown.' }] }, contents: [{ role: 'user', parts: [{ text: 'CANDIDATE RESUME:\\n' + $('Set Job Preferences').first().json.resumeText + '\\n\\nJOB POSTING:\\nTitle: ' + $json.title + '\\nCompany: ' + $json.company + '\\nLocation: ' + $json.location + '\\nDescription: ' + $json.description + '\\n\\nAnalyze this job against the candidate\\'s resume. Consider: tech stack match, seniority level, role type (backend vs full-stack), and required experience. Respond with ONLY valid JSON:\\n{\\n  \"score\": 0-100,\\n  \"matchReason\": \"2-3 sentences on why this is a good/bad match\",\\n  \"missingSkills\": [\"skill1\", \"skill2\"],\\n  \"keyMatchingSkills\": [\"skill1\", \"skill2\"],\\n  \"experienceFit\": \"under-qualified|good-fit|over-qualified\",\\n  \"recommendation\": \"strong-apply|apply|maybe|skip\"\\n}' }] }], generationConfig: { temperature: 0.7, responseMimeType: 'application/json' } }) }}",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'You are a job matching expert for software engineering roles. You analyze job descriptions against a candidate\\'s resume and provide a precise compatibility score. Always respond with valid JSON only, no markdown, no code blocks.\\n\\nCANDIDATE RESUME:\\n' + $('Set Job Preferences').first().json.resumeText + '\\n\\nJOB POSTING:\\nTitle: ' + $json.title + '\\nCompany: ' + $json.company + '\\nLocation: ' + $json.location + '\\nDescription: ' + $json.description + '\\n\\nAnalyze this job against the candidate\\'s resume. Consider: tech stack match, seniority level, role type (backend vs full-stack), and required experience. Respond with ONLY valid JSON:\\n{\\n  \"score\": 0-100,\\n  \"matchReason\": \"2-3 sentences on why this is a good/bad match\",\\n  \"missingSkills\": [\"skill1\", \"skill2\"],\\n  \"keyMatchingSkills\": [\"skill1\", \"skill2\"],\\n  \"experienceFit\": \"under-qualified|good-fit|over-qualified\",\\n  \"recommendation\": \"strong-apply|apply|maybe|skip\"\\n}' }] }], generationConfig: { temperature: 0.7 } }) }}",
         "options": {
-          "timeout": 30000
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 20000
+            }
+          }
         }
       }
     },
@@ -136,11 +174,12 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        600,
+        608,
         0
       ],
       "parameters": {
-        "jsCode": "// Gemini response: candidates[0].content.parts[0].text\nconst response = $input.first().json;\nconst aiResponse = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\nconst jobData = $('Filter Duplicates').item;\n\nlet parsed;\ntry {\n  parsed = JSON.parse(aiResponse);\n} catch (e) {\n  const jsonMatch = aiResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    parsed = {\n      score: 0,\n      matchReason: 'Could not parse AI response',\n      missingSkills: [],\n      keyMatchingSkills: [],\n      experienceFit: 'unknown',\n      recommendation: 'skip'\n    };\n  }\n}\n\nreturn {\n  json: {\n    ...jobData.json,\n    score: parsed.score || 0,\n    matchReason: parsed.matchReason || '',\n    missingSkills: parsed.missingSkills || [],\n    keyMatchingSkills: parsed.keyMatchingSkills || [],\n    experienceFit: parsed.experienceFit || 'unknown',\n    recommendation: parsed.recommendation || 'skip'\n  }\n};"
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Gemini response: candidates[0].content.parts[0].text\nconst response = $input.item.json;\nconst aiResponse = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\nconst jobData = $('Filter Duplicates').item;\n\nlet parsed;\ntry {\n  parsed = JSON.parse(aiResponse);\n} catch (e) {\n  const jsonMatch = aiResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    parsed = {\n      score: 0,\n      matchReason: 'Could not parse AI response',\n      missingSkills: [],\n      keyMatchingSkills: [],\n      experienceFit: 'unknown',\n      recommendation: 'skip'\n    };\n  }\n}\n\nreturn {\n  json: {\n    ...jobData.json,\n    score: parsed.score || 0,\n    matchReason: parsed.matchReason || '',\n    missingSkills: parsed.missingSkills || [],\n    keyMatchingSkills: parsed.keyMatchingSkills || [],\n    experienceFit: parsed.experienceFit || 'unknown',\n    recommendation: parsed.recommendation || 'skip'\n  }\n};"
       }
     },
     {
@@ -153,7 +192,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "const item = $input.first().json;\nconst minScore = $('Set Job Preferences').first().json.minScore || 70;\n\nif (item.score >= minScore) {\n  return { json: item };\n}\n\nreturn [];"
+        "jsCode": "const items = $input.all();\nconst minScore = $('Set Job Preferences').first().json.minScore || 70;\n\nconst matched = items.filter(item => (item.json.score || 0) >= minScore);\n\nif (matched.length === 0) {\n  throw new Error(`No jobs scored above ${minScore}. Top score was ${Math.max(...items.map(i => i.json.score || 0))}. Try lowering minScore in Set Job Preferences.`);\n}\n\nreturn matched;"
       }
     },
     {
@@ -162,12 +201,15 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1000,
+        1008,
         0
       ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -188,9 +230,15 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ systemInstruction: { parts: [{ text: 'You are an expert cover letter writer for software engineering roles. Write concise, compelling cover letters under 300 words. Be professional but personable. Every sentence must be specific to the job and candidate. No generic filler. Do NOT use markdown formatting.' }] }, contents: [{ role: 'user', parts: [{ text: 'CANDIDATE RESUME:\\n' + $('Set Job Preferences').first().json.resumeText + '\\n\\nJOB DETAILS:\\nTitle: ' + $json.title + '\\nCompany: ' + $json.company + '\\nLocation: ' + $json.location + '\\nDescription: ' + $json.description + '\\nKey matching skills: ' + ($json.keyMatchingSkills || []).join(', ') + '\\n\\nWrite a tailored cover letter addressed to \"Hiring Manager\" at ' + $json.company + '.\\nFocus on: .NET, C#, React, backend architecture, and any specific technologies mentioned in the job description.\\nRespond with ONLY the cover letter text.' }] }], generationConfig: { temperature: 0.7 } }) }}",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'You are an expert cover letter writer for software engineering roles. Write concise, compelling cover letters under 300 words. Be professional but personable. Every sentence must be specific to the job and candidate. No generic filler. Do NOT use markdown formatting.\\n\\nCANDIDATE RESUME:\\n' + $('Set Job Preferences').first().json.resumeText + '\\n\\nJOB DETAILS:\\nTitle: ' + $json.title + '\\nCompany: ' + $json.company + '\\nLocation: ' + $json.location + '\\nDescription: ' + $json.description + '\\nKey matching skills: ' + ($json.keyMatchingSkills || []).join(', ') + '\\n\\nWrite a tailored cover letter addressed to \"Hiring Manager\" at ' + $json.company + '.\\nFocus on the specific technologies mentioned in the job description.\\nRespond with ONLY the cover letter text, no JSON, no markdown.' }] }], generationConfig: { temperature: 0.7 } }) }}",
         "options": {
-          "timeout": 30000
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 20000
+            }
+          }
         }
       }
     },
@@ -204,7 +252,8 @@
         0
       ],
       "parameters": {
-        "jsCode": "const jobData = $('Filter Top Matches').item;\n// Gemini response: candidates[0].content.parts[0].text\nconst response = $input.first().json;\nconst coverLetter = response.candidates?.[0]?.content?.parts?.[0]?.text || 'Cover letter generation failed.';\n\nreturn {\n  json: {\n    ...jobData.json,\n    coverLetter: coverLetter.trim(),\n    processedDate: new Date().toISOString().split('T')[0]\n  }\n};"
+        "mode": "runOnceForEachItem",
+        "jsCode": "const jobData = $('Filter Top Matches').item;\nconst response = $input.item.json;\nconst coverLetter = response.candidates?.[0]?.content?.parts?.[0]?.text || 'Cover letter generation failed.';\n\nreturn {\n  json: {\n    ...jobData.json,\n    coverLetter: coverLetter.trim(),\n    processedDate: new Date().toISOString().split('T')[0]\n  }\n};"
       }
     },
     {
@@ -213,7 +262,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1400,
+        1408,
         0
       ],
       "parameters": {
@@ -258,7 +307,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst config = $('Set Job Preferences').first().json;\nconst today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nif (items.length === 0) {\n  return {\n    json: {\n      subject: `Job Search: No new matches found - ${today}`,\n      htmlBody: `<html><body style=\"font-family: Arial, sans-serif;\"><h2>Job Search Report - ${today}</h2><p>No new jobs matched your criteria (minimum score: ${config.minScore}).</p><p>Try broadening your search query or lowering the minimum score.</p></body></html>`,\n      matchCount: 0,\n      topScore: 0,\n      yourEmail: config.yourEmail\n    }\n  };\n}\n\nconst sorted = items.map(i => i.json).sort((a, b) => (b.score || 0) - (a.score || 0));\nconst topScore = sorted[0]?.score || 0;\n\nlet jobRows = sorted.map((job, i) => {\n  const scoreColor = job.score >= 85 ? '#27ae60' : job.score >= 70 ? '#f39c12' : '#e74c3c';\n  const recBadge = job.recommendation === 'strong-apply' ? '🟢 Strong Apply' :\n                   job.recommendation === 'apply' ? '🟡 Apply' :\n                   job.recommendation === 'maybe' ? '🟠 Maybe' : '🔴 Skip';\n\n  return `\n    <tr style=\"border-bottom: 1px solid #eee;\">\n      <td style=\"padding: 12px;\">\n        <strong>${job.title}</strong><br>\n        <span style=\"color: #666;\">${job.company} - ${job.location}</span><br>\n        <span style=\"color: #888; font-size: 12px;\">${job.source} | ${job.salary}</span>\n      </td>\n      <td style=\"padding: 12px; text-align: center;\">\n        <span style=\"background: ${scoreColor}; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold;\">${job.score}</span>\n      </td>\n      <td style=\"padding: 12px; text-align: center;\">${recBadge}</td>\n      <td style=\"padding: 12px;\">\n        <a href=\"${job.applyLink}\" style=\"background: #3498db; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; display: inline-block;\">Apply</a>\n      </td>\n    </tr>\n    <tr>\n      <td colspan=\"4\" style=\"padding: 8px 12px; background: #f9f9f9;\">\n        <strong>Why it matches:</strong> ${job.matchReason}<br>\n        ${job.missingSkills.length > 0 ? '<strong>Missing:</strong> ' + job.missingSkills.join(', ') : ''}\n      </td>\n    </tr>\n    <tr>\n      <td colspan=\"4\" style=\"padding: 8px 12px; background: #f0f7ff;\">\n        <details>\n          <summary style=\"cursor: pointer; font-weight: bold;\">📄 Cover Letter (click to expand)</summary>\n          <div style=\"white-space: pre-wrap; margin-top: 8px; padding: 12px; background: white; border: 1px solid #ddd; border-radius: 4px;\">${job.coverLetter}</div>\n        </details>\n      </td>\n    </tr>`;\n}).join('');\n\nconst htmlBody = `\n<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;\">\n  <div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: white; margin: 0;\">Job Search Report</h1>\n    <p style=\"color: rgba(255,255,255,0.8); margin: 8px 0 0;\">${today}</p>\n  </div>\n  <div style=\"background: #f5f5f5; padding: 16px; display: flex; gap: 16px;\">\n    <div style=\"background: white; padding: 12px 24px; border-radius: 8px; text-align: center;\">\n      <div style=\"font-size: 24px; font-weight: bold; color: #3498db;\">${sorted.length}</div>\n      <div style=\"color: #888; font-size: 12px;\">Matches Found</div>\n    </div>\n    <div style=\"background: white; padding: 12px 24px; border-radius: 8px; text-align: center;\">\n      <div style=\"font-size: 24px; font-weight: bold; color: #27ae60;\">${topScore}</div>\n      <div style=\"color: #888; font-size: 12px;\">Top Score</div>\n    </div>\n  </div>\n  <table style=\"width: 100%; border-collapse: collapse; background: white;\">\n    <thead>\n      <tr style=\"background: #ecf0f1;\">\n        <th style=\"padding: 12px; text-align: left;\">Job</th>\n        <th style=\"padding: 12px; text-align: center;\">Score</th>\n        <th style=\"padding: 12px; text-align: center;\">Action</th>\n        <th style=\"padding: 12px;\">Link</th>\n      </tr>\n    </thead>\n    <tbody>\n      ${jobRows}\n    </tbody>\n  </table>\n  <div style=\"padding: 16px; text-align: center; color: #888; font-size: 12px;\">\n    Generated by n8n Job Search Automation | Min score: ${config.minScore}\n  </div>\n</body>\n</html>`;\n\nreturn {\n  json: {\n    subject: `🎯 ${sorted.length} Job Matches (Top: ${topScore}/100) - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,\n    htmlBody,\n    matchCount: sorted.length,\n    topScore,\n    yourEmail: config.yourEmail\n  }\n};"
+        "jsCode": "const items = $input.all();\nconst config = $('Set Job Preferences').first().json;\nconst today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nif (items.length === 0) {\n  return {\n    json: {\n      subject: `Job Search: No new matches found - ${today}`,\n      htmlBody: `<html><body style=\"font-family: Arial, sans-serif;\"><h2>Job Search Report - ${today}</h2><p>No new jobs matched your criteria (minimum score: ${config.minScore}).</p><p>Try broadening your search query or lowering the minimum score.</p></body></html>`,\n      matchCount: 0,\n      topScore: 0,\n      yourEmail: config.yourEmail\n    }\n  };\n}\n\nconst sorted = items.map(i => i.json).sort((a, b) => (b.score || 0) - (a.score || 0));\nconst topScore = sorted[0]?.score || 0;\n\nlet jobRows = sorted.map((j, i) => {\n  const title = j['Job Title'] || j.title || 'Unknown Title';\n  const company = j['Company'] || j.company || 'Unknown';\n  const location = j['Location'] || j.location || 'Not specified';\n  const score = j['Match Score'] || j.score || 0;\n  const recommendation = j['Recommendation'] || j.recommendation || 'skip';\n  const matchReason = j['Match Reason'] || j.matchReason || '';\n  const missingSkills = j['Missing Skills'] || (j.missingSkills ? (Array.isArray(j.missingSkills) ? j.missingSkills.join(', ') : j.missingSkills) : '');\n  const applyLink = j['Apply Link'] || j.applyLink || '#';\n  const coverLetter = j['Cover Letter'] || j.coverLetter || '';\n  const source = j.source || 'Google Jobs';\n  const salary = j.salary || 'Not listed';\n\n  const scoreColor = score >= 85 ? '#27ae60' : score >= 70 ? '#f39c12' : '#e74c3c';\n  const recBadge = recommendation === 'strong-apply' ? 'Strong Apply' :\n                   recommendation === 'apply' ? 'Apply' :\n                   recommendation === 'maybe' ? 'Maybe' : 'Skip';\n\n  return `\n    <tr style=\"border-bottom: 1px solid #eee;\">\n      <td style=\"padding: 12px;\">\n        <strong>${title}</strong><br>\n        <span style=\"color: #666;\">${company} - ${location}</span><br>\n        <span style=\"color: #888; font-size: 12px;\">${source} | ${salary}</span>\n      </td>\n      <td style=\"padding: 12px; text-align: center;\">\n        <span style=\"background: ${scoreColor}; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold;\">${score}</span>\n      </td>\n      <td style=\"padding: 12px; text-align: center;\">${recBadge}</td>\n      <td style=\"padding: 12px;\">\n        <a href=\"${applyLink}\" style=\"background: #3498db; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; display: inline-block;\">Apply</a>\n      </td>\n    </tr>\n    <tr>\n      <td colspan=\"4\" style=\"padding: 8px 12px; background: #f9f9f9;\">\n        <strong>Why it matches:</strong> ${matchReason}<br>\n        ${missingSkills ? '<strong>Missing:</strong> ' + missingSkills : ''}\n      </td>\n    </tr>\n    <tr>\n      <td colspan=\"4\" style=\"padding: 8px 12px; background: #f0f7ff;\">\n        <details>\n          <summary style=\"cursor: pointer; font-weight: bold;\">Cover Letter (click to expand)</summary>\n          <div style=\"white-space: pre-wrap; margin-top: 8px; padding: 12px; background: white; border: 1px solid #ddd; border-radius: 4px;\">${coverLetter}</div>\n        </details>\n      </td>\n    </tr>`;\n}).join('');\n\nconst htmlBody = `\n<html>\n<body style=\"font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;\">\n  <div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: white; margin: 0;\">Job Search Report</h1>\n    <p style=\"color: rgba(255,255,255,0.8); margin: 8px 0 0;\">${today}</p>\n  </div>\n  <div style=\"background: #f5f5f5; padding: 16px; display: flex; gap: 16px;\">\n    <div style=\"background: white; padding: 12px 24px; border-radius: 8px; text-align: center;\">\n      <div style=\"font-size: 24px; font-weight: bold; color: #3498db;\">${sorted.length}</div>\n      <div style=\"color: #888; font-size: 12px;\">Matches Found</div>\n    </div>\n    <div style=\"background: white; padding: 12px 24px; border-radius: 8px; text-align: center;\">\n      <div style=\"font-size: 24px; font-weight: bold; color: #27ae60;\">${topScore}</div>\n      <div style=\"color: #888; font-size: 12px;\">Top Score</div>\n    </div>\n  </div>\n  <table style=\"width: 100%; border-collapse: collapse; background: white;\">\n    <thead>\n      <tr style=\"background: #ecf0f1;\">\n        <th style=\"padding: 12px; text-align: left;\">Job</th>\n        <th style=\"padding: 12px; text-align: center;\">Score</th>\n        <th style=\"padding: 12px; text-align: center;\">Action</th>\n        <th style=\"padding: 12px;\">Link</th>\n      </tr>\n    </thead>\n    <tbody>\n      ${jobRows}\n    </tbody>\n  </table>\n  <div style=\"padding: 16px; text-align: center; color: #888; font-size: 12px;\">\n    Generated by n8n Job Search Automation | Min score: ${config.minScore}\n  </div>\n</body>\n</html>`;\n\nreturn {\n  json: {\n    subject: `${sorted.length} Job Matches (Top: ${topScore}/100) - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,\n    htmlBody,\n    matchCount: sorted.length,\n    topScore,\n    yourEmail: config.yourEmail\n  }\n};"
       }
     },
     {
@@ -267,15 +316,13 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        1800,
+        1808,
         0
       ],
       "parameters": {
         "sendTo": "={{ $json.yourEmail }}",
         "subject": "={{ $json.subject }}",
         "message": "={{ $json.htmlBody }}",
-        "emailType": "html",
-        "operation": "send",
         "options": {}
       }
     },
@@ -295,6 +342,28 @@
   ],
   "connections": {
     "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Resume PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Resume PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
       "main": [
         [
           {
