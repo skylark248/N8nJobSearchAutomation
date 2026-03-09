@@ -1,464 +1,395 @@
-# Job Search Automation - Complete Setup Guide
+# Job Search Automation — Setup Guide
 
 ## Prerequisites
-- n8n running locally in Docker via `docker compose up -d` (from the parent n8n directory)
-- SerpAPI account (free tier: 100 searches/month)
-- Google Gemini API key (free tier: Gemma 3 27B -- 30 RPM, 15K TPM, 14.4K RPD)
+
+- n8n running locally in Docker (see Docker Setup below)
+- RapidAPI account with JSearch Basic subscription (free)
+- OpenAI API key (pay-as-you-go, ~$0.075/run)
+- Apify account ($5/month free credit, covers ~60+ runs)
 - Google account with Sheets and Gmail access
-- Your resume in PDF format (placed in the `resumes/` folder)
+- Resume PDF at `resumes/your-resume.pdf`
 
 ---
 
 ## Docker Setup
 
+### Directory Structure
+
+This project expects to live inside a parent `n8n/` directory that holds Docker runtime data:
+
+```
+n8n/                          ← parent directory
+├── docker-compose.yml
+├── database.sqlite
+├── binaryData/
+├── N8nJobSearchAutomation/   ← this repo (clone here)
+│   └── resumes/
+│       └── your-resume.pdf
+└── YtShortsAutomation/       ← optional sibling (ignore if not using)
+```
+
+### docker-compose.yml Requirements
+
+Your `docker-compose.yml` must include these settings for the workflow to function:
+
+```yaml
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      N8N_RUNNERS_TASK_TIMEOUT: 900        # 15 min — Naukri Apify actor takes 4-5 min
+      N8N_RESTRICT_FILE_ACCESS_TO: /home/node/.n8n;/home/node/.n8n-files
+    volumes:
+      - .:/home/node/.n8n                  # n8n runtime data
+      - ./N8nJobSearchAutomation/resumes:/home/node/.n8n-files  # resume PDFs
+```
+
 ### Starting n8n
 
-The project uses Docker Compose with a custom image. From the **parent n8n directory** (not from JobSearchAutomation/):
-
 ```bash
+# From the parent n8n/ directory (not from inside N8nJobSearchAutomation/)
 docker compose up -d
 ```
 
-This starts n8n with:
-- Custom image with FFmpeg baked in (shared with YtShortsAutomation)
-- Port 5678 exposed at http://localhost:5678
-- Main volume mount: `.:/home/node/.n8n` (n8n runtime data)
-- Resume volume mount: `./JobSearchAutomation/resumes:/home/node/.n8n-files` (resume PDFs)
-- `NODE_FUNCTION_ALLOW_BUILTIN=child_process,fs,path,os`
-- `N8N_RUNNERS_TASK_TIMEOUT=900` (15-minute timeout)
-- `N8N_RESTRICT_FILE_ACCESS_TO=/home/node/.n8n;/home/node/.n8n-files`
+n8n will be available at [http://localhost:5678](http://localhost:5678).
 
 ### Resume Volume Mount
 
-The `docker-compose.yml` maps your local `JobSearchAutomation/resumes/` folder to `/home/node/.n8n-files` inside the container. This means:
-
-- Place your resume PDF in `JobSearchAutomation/resumes/` on your host machine
-- The workflow's **Read Binary File** node reads from `/home/node/.n8n-files/YourResume.pdf`
-- Resumes survive container restarts because they live on the host filesystem
-- The `N8N_RESTRICT_FILE_ACCESS_TO` environment variable must include `/home/node/.n8n-files` for the Read Binary File node to access it
-
-> **Note:** If you change the volume mount path, update the Read Binary File node's file path to match.
-
-### Rebuilding the Image
-
-If you update the Dockerfile or want a newer n8n version:
-
-```bash
-docker compose build && docker compose up -d
-```
+Place your resume as `N8nJobSearchAutomation/resumes/your-resume.pdf`. The Docker volume maps this to `/home/node/.n8n-files/your-resume.pdf` inside the container. The **Read Resume PDF** node reads from this exact path.
 
 ---
 
-## Credential 1: SerpAPI
+## Credential 1: JSearch (RapidAPI)
 
-**Used by**: Search Google Jobs nodes (Bangalore + Remote India)
-
-### Create Account
-1. Go to [serpapi.com](https://serpapi.com)
-2. Click **"Register"** (free tier available, no credit card required)
-3. Sign up with email or Google
+**Used by**: Search Google Jobs (JSearch) node — aggregates LinkedIn, Indeed, Glassdoor, Google Jobs
 
 ### Get API Key
-1. After login, go to your **Dashboard**
-2. Your API key is displayed at the top of the page
-3. Copy the key (a long alphanumeric string)
 
-### Free Tier Limits
-- **100 searches per month** (resets monthly)
-- Each workflow run uses **2 searches** (one for Bangalore, one for Remote India)
-- With dual-location search, you can run the workflow ~50 times per month on the free tier
-- Paid plans start at $50/month for 5,000 searches
+1. Go to [rapidapi.com](https://rapidapi.com) and create an account
+2. Search for **"JSearch"** in the API marketplace
+3. Subscribe to the **JSearch Basic** plan (free — 200 requests/month, no credit card)
+4. Go to the JSearch API page → **"Endpoints"** tab → copy the `X-RapidAPI-Key` from the code examples
 
-### Add to n8n
-1. Open your imported workflow in n8n
-2. Click on the **"Set Job Preferences"** node
-3. Find the `serpApiKey` field in the code
-4. Replace the placeholder with your actual SerpAPI API key
-5. Save the workflow
+### Free Tier Usage
+- **200 requests/month** limit
+- This workflow uses **28 requests/run** (7 queries × 4 pages)
+- Supports ~7 runs/month on free tier — more than enough for weekly runs
 
-The SerpAPI key is passed as a query parameter to the Search Google Jobs HTTP Request nodes automatically.
-
-### Verify
-```bash
-curl "https://serpapi.com/search.json?engine=google_jobs&q=software+engineer&location=Bangalore&api_key=YOUR_KEY" | head -20
+### Add to Workflow
+Open the **Set Job Preferences** node and set:
+```javascript
+rapidApiKey: 'YOUR_RAPIDAPI_KEY'
 ```
-Should return JSON with job listings.
 
 ---
 
-## Credential 2: Google Gemini API (Gemma 3 27B)
+## Credential 2: OpenAI API
 
-**Used by**: Score & Match (Gemini), Generate Cover Letter (Gemini)
+**Used by**: Score OpenAI API node (job scoring) + Cover Letter OpenAI API node
 
-**Model**: Gemma 3 27B (`gemma-3-27b-it`) -- a free-tier model available through Google's Gemini API
+**Model**: `gpt-4o-mini` — fast, accurate for structured JSON and text generation
 
 ### Get API Key
-1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-2. Sign in with your Google account
-3. Click **"Create API Key"**
-4. Select a Google Cloud project (or create a new one)
-5. Copy the generated API key
 
-> **Important:** Even though we use the Gemma 3 27B model (not Gemini 2.0 Flash), the API key comes from the same place: aistudio.google.com. The model is specified in the HTTP Request URL, not in the API key.
+1. Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. Sign in → click **"Create new secret key"**
+3. Copy the key — it starts with `sk-proj-...`
 
-### Free Tier Limits (Gemma 3 27B)
-- **30 requests per minute** (RPM)
-- **15,000 tokens per minute** (TPM)
-- **14,400 requests per day** (RPD)
-- **No credit card required**
-- The workflow uses `batchSize=1` with `batchInterval=20000ms` (20 seconds between requests) to stay well within the rate limits
+> **Important**: The key must include the `sk-proj-` prefix. Without it, you'll get "Authorization failed" errors.
 
-### Add to n8n
-1. Open your imported workflow in n8n
-2. Click on the **"Set Job Preferences"** node
-3. Find the `geminiApiKey` field in the code
-4. Replace the placeholder with your actual Gemini API key
-5. Save the workflow
+### Cost
+- Scoring ~200 jobs × ~5500 tokens each: ~$0.055/run
+- Cover letters ~40 jobs × ~5500 tokens each: ~$0.011/run
+- **Total**: ~$0.076/run, ~$0.30/month at 4 runs/month
 
-The API key is passed as a query parameter to the Gemini HTTP Request nodes automatically.
-
-### Verify
-```bash
-curl "https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent?key=YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"contents":[{"parts":[{"text":"Hello"}]}]}'
+### Add to Workflow
+Open the **Set Job Preferences** node and set:
+```javascript
+openAiApiKey: 'sk-proj-YOUR_KEY_HERE'
 ```
-Should return a JSON response with generated text.
 
 ---
 
-## Credential 3: Google OAuth2 (Sheets + Gmail)
+## Credential 3: Apify (Naukri Scraper)
 
-**Used by**: Save to Google Sheets, Send Gmail Notification
+**Used by**: Search Naukri (Apify) + Search Naukri C# (Apify) nodes
+
+**Actor**: `nuclear_quietude~naukri-job-scraper` (pay-per-usage — do NOT rent)
+
+### Get API Token
+
+1. Go to [apify.com](https://apify.com) and create an account
+2. Go to [console.apify.com/account/integrations](https://console.apify.com/account/integrations)
+3. Copy your **Personal API token** (starts with `apify_api_...`)
+
+### Free Credit & Cost
+- **$5/month** recurring free credit (auto-credited each month)
+- Actor costs ~$0.005-0.01/run (2 searches × ~$0.003-0.005 each)
+- At ~4 runs/month, total Apify cost is ~$0.04/month — well within free credit
+- **Do NOT rent the actor** (rented actors = $19.99/month flat fee regardless of usage)
+
+### Actor Runtime
+- ~4-5 minutes per call (uses `run-sync-get-dataset-items` — waits for completion)
+- Workflow runs **2 Apify calls in parallel** (.NET + C#) — total Naukri time: ~4-5 min
+- Timeout is set to **300000ms** (5 minutes) — do not reduce this
+
+### Add to Workflow
+Open the **Set Job Preferences** node and set:
+```javascript
+apifyToken: 'apify_api_YOUR_TOKEN_HERE'
+```
+
+---
+
+## Credential 4: Google OAuth2 (Sheets + Gmail)
+
+**Used by**: Read Existing Jobs + Save to Google Sheets + Send Gmail Digest
+
+Both Google Sheets and Gmail use the same OAuth2 client credentials.
 
 ### Step 1: Create Google Cloud Project
+
 1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Sign in with the **same Google account** you want to use for Sheets and Gmail
-3. Click the project dropdown (top-left) -> **"New Project"**
-4. Name: `n8n Job Search Automation` -> **Create**
-5. Make sure this new project is selected in the dropdown
+2. Click the project dropdown → **"New Project"**
+3. Name: `n8n Job Search` → Create
+4. Make sure this project is selected
 
 ### Step 2: Enable Required APIs
-1. Go to **APIs & Services** -> **Library** (left sidebar)
-2. Search for **"Google Sheets API"** -> Click it -> **"Enable"**
-3. Search for **"Gmail API"** -> Click it -> **"Enable"**
+
+1. Go to **APIs & Services** → **Library**
+2. Enable **Google Sheets API**
+3. Enable **Gmail API**
 
 ### Step 3: Configure OAuth Consent Screen
-1. Go to **APIs & Services** -> **OAuth consent screen**
-2. Select **"External"** -> **Create**
+
+1. Go to **APIs & Services** → **OAuth consent screen**
+2. Select **External** → Create
 3. Fill in:
    - App name: `n8n Job Search`
-   - User support email: your email
-   - Developer contact email: your email
-4. Click **"Save and Continue"**
-5. **Scopes** page:
-   - Click **"Add or Remove Scopes"**
-   - Search and add: `https://www.googleapis.com/auth/spreadsheets` (Google Sheets read/write)
-   - Search and add: `https://www.googleapis.com/auth/gmail.send` (Gmail send)
-   - Click **"Update"** -> **"Save and Continue"**
-6. **Test users** page (CRITICAL -- skipping this causes "Access blocked" error):
-   - Click **"Add Users"**
-   - Add the **exact Google email** you'll use to sign in (e.g., `your-email@gmail.com`)
-   - Click **"Save and Continue"**
-   - If you already skipped this step and got "Access blocked": Go to **OAuth consent screen** -> **Audience** tab -> **Add Users** -> add your email
-7. Click **"Back to Dashboard"**
+   - Support email: your Gmail address
+   - Developer contact email: your Gmail address
+4. Click through Scopes section without changes
+5. **Test users** — CRITICAL, do not skip:
+   - Click **Add Users** → add your exact Gmail address
+   - Without this step, you'll get "Access blocked: This app hasn't been verified"
+6. Save and Continue
 
 ### Step 4: Create OAuth2 Credentials
-1. Go to **APIs & Services** -> **Credentials**
-2. Click **"+ Create Credentials"** -> **"OAuth client ID"**
+
+1. Go to **APIs & Services** → **Credentials**
+2. Click **+ Create Credentials** → **OAuth client ID**
 3. Application type: **Web application**
 4. Name: `n8n`
-5. Under **"Authorized redirect URIs"**:
-   - Click **"+ Add URI"**
-   - Enter: `http://localhost:5678/rest/oauth2-credential/callback`
-6. Click **"Create"**
-7. Copy **Client ID** and **Client Secret** from the popup
+5. Under **Authorized redirect URIs** → Add: `http://localhost:5678/rest/oauth2-credential/callback`
+6. Click Create → copy **Client ID** and **Client Secret**
 
 ### Step 5: Add Google Sheets Credential to n8n
-1. Open your imported workflow in n8n
-2. Click on the **"Save to Google Sheets"** node
-3. Click **"Credential to connect with"** -> **"Create New Credential"**
-4. Select **"Google Sheets OAuth2 API"**
-5. Paste:
-   - **Client ID**: from step 4
-   - **Client Secret**: from step 4
-6. Click **"Sign in with Google"**
-7. Select your Google account
-8. If you see "This app isn't verified" warning:
-   - Click **"Advanced"** -> **"Go to n8n Job Search (unsafe)"**
-   - This is safe -- it's your own app
-9. Click **"Allow"** for all requested permissions
-10. You should see **"Connected"** in n8n
-11. Click **"Save"**
+
+1. Open n8n → Credentials (top menu) → **Add Credential**
+2. Search for **Google Sheets OAuth2 API** → Select
+3. Paste your Client ID and Client Secret
+4. Click **Sign in with Google** → authorize with your Google account
+5. If you see "This app isn't verified": click **Advanced** → **Go to n8n Job Search (unsafe)** — this is safe since it's your own OAuth app
+6. Name the credential (e.g., `Google Sheets account`) and save
+7. Open the **Save to Google Sheets** node and the **Read Existing Jobs** node → link this credential in both
 
 ### Step 6: Add Gmail Credential to n8n
-1. Click on the **"Send Gmail Digest"** node
-2. Click **"Credential to connect with"** -> **"Create New Credential"**
-3. Select **"Gmail OAuth2 API"**
-4. Paste the **same Client ID and Client Secret** from step 4
-5. Click **"Sign in with Google"**
-6. Select the same Google account
-7. Allow Gmail permissions
-8. Click **"Save"**
 
-### OAuth Token Refresh
-- Tokens expire periodically
-- n8n auto-refreshes them, but if a node fails with auth error:
-  - Go to the credential in n8n
-  - Click **"Sign in with Google"** again to re-authorize
+1. Open n8n → Credentials → **Add Credential**
+2. Search for **Gmail OAuth2 API** → Select
+3. Use the **same** Client ID and Client Secret from Step 4
+4. Sign in and authorize → Save
+5. Open the **Send Gmail Digest** node → link this credential
 
 ---
 
 ## Google Sheet Setup
 
-### Create the Spreadsheet
-1. Go to [sheets.google.com](https://sheets.google.com)
-2. Click **"Blank spreadsheet"**
-3. Name the spreadsheet: **"Job Tracker"**
-4. In row 1, add these exact headers in columns A through L:
+### Create the Sheet
 
-| Column | Header |
-|---|---|
-| A | Date |
-| B | Job Title |
-| C | Company |
-| D | Location |
-| E | Match Score |
-| F | Recommendation |
-| G | Match Reason |
-| H | Missing Skills |
-| I | Apply Link |
-| J | Cover Letter |
-| K | Status |
-| L | Applied Date |
+1. Go to [sheets.google.com](https://sheets.google.com) → **Blank spreadsheet**
+2. Rename the file to **Job Tracker** (click the title at the top)
+3. Rename the tab (bottom) to **Job Tracker** as well
+4. Add these exact headers in row 1 (columns A–L):
 
-5. **Format the headers**: Select row 1 -> Bold -> Freeze row (View -> Freeze -> 1 row)
-6. **Optional formatting**:
-   - Column E (Match Score): Format -> Number -> Number (0 decimal places)
-   - Column J (Cover Letter): Make column wider to accommodate long text
-   - Column K (Status): Add data validation dropdown with values: `New`, `Applied`, `Interview`, `Rejected`, `Offer`
+| A | B | C | D | E | F | G | H | I | J | K | L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Date | Job Title | Company | Location | Match Score | Recommendation | Match Reason | Missing Skills | Apply Link | Cover Letter | Status | Applied Date |
 
-> **Important:** The sheet name within the spreadsheet should be **"Job Tracker"** (the tab name at the bottom). The Save to Google Sheets node references this name. If your tab is named something else (e.g., "Sheet1"), update the node configuration to match.
+5. Freeze row 1: **View** → **Freeze** → **1 row**
+6. Optional: Add data validation on column K (Status):
+   - Right-click column K → Data validation
+   - Criteria: List of items: `Not Applied, Applied, Interview`, `Rejected, Offer`
 
 ### Get Spreadsheet ID
-1. The URL of your spreadsheet looks like: `https://docs.google.com/spreadsheets/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/edit`
-2. The spreadsheet ID is the long string between `/d/` and `/edit`: `1aBcDeFgHiJkLmNoPqRsTuVwXyZ`
-3. Copy this ID
+
+From the URL: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
+
+Copy the long string between `/d/` and `/edit`.
 
 ### Configure in n8n
-1. Click on the **"Set Job Preferences"** node
-2. Find the `spreadsheetId` field in the code
-3. Paste your spreadsheet ID
-4. Save the workflow
 
----
-
-## Resume Setup
-
-### Place Your Resume PDF
-1. Place your resume as a PDF file in the `resumes/` folder inside the JobSearchAutomation directory
-2. Any filename ending in `.pdf` works (e.g., `resume.pdf`, `JohnDoe_Resume.pdf`)
-3. The workflow's **Read Binary File** node reads the PDF from `/home/node/.n8n-files/` inside the Docker container
-4. The **Extract From File** node converts the PDF to plain text automatically
-
-### Docker Volume Mount
-The `docker-compose.yml` in the parent directory includes this volume mount:
-
-```yaml
-volumes:
-  - ./JobSearchAutomation/resumes:/home/node/.n8n-files
+Open **Set Job Preferences** and set:
+```javascript
+spreadsheetId: 'YOUR_SPREADSHEET_ID'
 ```
 
-This means files in your local `JobSearchAutomation/resumes/` folder appear at `/home/node/.n8n-files/` inside the container. The `N8N_RESTRICT_FILE_ACCESS_TO` environment variable includes `/home/node/.n8n-files` to allow n8n's Read Binary File node to access this path.
-
-### Update the Read Binary File Node
-If your resume filename is different from what's configured:
-1. Open the **"Read Binary File"** node in n8n
-2. Update the file path to `/home/node/.n8n-files/YourActualFilename.pdf`
-3. Save the workflow
-
-### Tips for Better AI Matching
-- Use specific technology names (e.g., ".NET Core 8" not just ".NET")
-- Include years of experience with each technology
-- List quantifiable achievements (e.g., "reduced latency by 40%")
-- Include both the technology and the domain (e.g., "fintech", "healthcare")
-
-### Update Target Roles and Locations
-In the **"Set Job Preferences"** node, you can modify:
-- `targetRoles`: Array of 17 job titles to search for
-- Location configuration: Dual-location search (Bangalore onsite/hybrid + India remote by default)
-- `maxResults`: 25 results per search (50 total across both locations)
-- `minScore`: 50 (minimum match score to keep)
-
-### Date Filter
-The workflow uses `date_posted:week` as a search filter, which limits results to jobs posted within the last week. This keeps results fresh and avoids re-scoring old listings. You can change this in the Search Google Jobs nodes' query parameters.
+> The workflow uses `appendOrUpdate` matching on Job Title + Company + Apply Link — re-running the same week won't create duplicates. The Status column is excluded from updates, so your manual "Applied" / "Interview" edits are preserved across runs.
 
 ---
 
-## Post-Setup: First Test Run
+## Final Configuration Checklist
 
-### Run the Workflow
-1. Click **"Test Workflow"** (play button in top-right)
-2. Wait 5-15 minutes for full execution (the rate-limited HTTP calls take time)
-3. Watch the execution progress -- each node lights up green when done
+Open the **Set Job Preferences** node and verify all 5 values are set:
 
-### Verify
-- [ ] Read Binary File successfully loaded your resume PDF
-- [ ] Extract From File converted the PDF to text
-- [ ] SerpAPI returned job listings for both locations (check Search Google Jobs node outputs)
-- [ ] Jobs were parsed and deduplicated (check Filter Duplicates node output)
-- [ ] Gemma 3 27B scored each job with a match score (check Score & Match node output)
-- [ ] Top matches (score >= 50) were filtered (check Filter Top Matches node output)
-- [ ] Cover letters were generated for top matches (check Generate Cover Letter output)
-- [ ] Results appeared in your Google Sheet with all columns populated
-- [ ] You received a digest email in Gmail with the top job matches
+```javascript
+const baseConfig = {
+  minScore: 75,                          // Jobs must score >= 75 to generate cover letter
+  yourEmail: 'YOUR_EMAIL@gmail.com',    // Where to send the digest
+  spreadsheetId: 'YOUR_SPREADSHEET_ID', // Google Sheet ID
+  openAiApiKey: 'sk-proj-YOUR_KEY',     // Must start with sk-proj-
+  rapidApiKey: 'YOUR_RAPIDAPI_KEY',     // From RapidAPI JSearch
+  apifyToken: 'apify_api_YOUR_TOKEN',   // From Apify console
+  resumeText: resumeText                // Populated automatically from PDF
+};
+```
+
+---
+
+## First Test Run
+
+### Before Running, Verify
+
+- [ ] Resume PDF at `resumes/your-resume.pdf`
+- [ ] `rapidApiKey` set in Set Job Preferences
+- [ ] `openAiApiKey` (with `sk-proj-` prefix) set in Set Job Preferences
+- [ ] `apifyToken` set in Set Job Preferences
+- [ ] `yourEmail` and `spreadsheetId` set in Set Job Preferences
+- [ ] Google Sheets OAuth2 credential linked in Save to Google Sheets + Read Existing Jobs
+- [ ] Gmail OAuth2 credential linked in Send Gmail Digest
+- [ ] Google Sheet created with correct 12 headers and tab named "Job Tracker"
+
+### Run
+
+1. Click **"Test Workflow"** in n8n (▶ button)
+2. Wait ~21 minutes (Naukri Apify calls take 4-5 min, scoring ~200 jobs at 3s each takes ~10 min)
+3. Watch nodes turn green one by one
+
+### Expected Results (First Run)
+
+| Stage | Expected Count |
+|---|---|
+| Set Job Preferences output | 7 items |
+| After JSearch (7 queries × 4 pages) | ~140 raw jobs |
+| After Naukri .NET + C# (Apify) | ~50-70 more raw jobs |
+| After deduplication | ~200-210 unique jobs |
+| After cross-run dedup (first run = 0 seen) | ~200-210 new jobs |
+| After AI scoring + filter (≥ 75) | ~30-70 final matches |
+| Google Sheet rows added | Same as final matches |
+| Gmail digest | 1 email with all matches |
 
 ### Common First-Run Issues
-- **0 jobs found**: SerpAPI may not find jobs for very specific titles in small markets. Try broader titles like "Software Engineer" or a larger metro area.
-- **All scores below 50**: Your resume may not match the found jobs well. Try lowering the threshold in the Set Job Preferences node.
-- **Google Sheet empty**: Verify the spreadsheet ID and that the Google OAuth2 credential has Sheets permissions.
-- **Rate limit errors (429)**: The workflow already uses batchSize=1 with 20s intervals. If you still hit limits, increase `batchInterval` in the HTTP Request nodes.
-- **Resume not found**: Make sure the PDF is in `resumes/` and Docker is running with the volume mount. Check that the filename in the Read Binary File node matches.
+
+| Issue | Fix |
+|---|---|
+| "Authorization failed" on Score OpenAI API | Key missing `sk-proj-` prefix in Set Job Preferences |
+| "Service refused connection" on Naukri | Timeout < 300000ms in Search Naukri node options |
+| "SSL Issue" on Search Naukri | Enable "Ignore SSL Issues" in Search Naukri node → Options |
+| "Task request timed out" on Set Job Preferences | Another workflow using task runner — wait and retry |
+| No rows in Google Sheet | Check that Sheets OAuth2 is linked and tab is named "Job Tracker" |
+| No email received | Check Gmail OAuth2 credential and `yourEmail` value |
+| "Resume PDF appears empty" error | PDF is image-based (scanned) — use a text-based PDF |
+| 0 unique jobs after parse | JSearch returned empty — verify `rapidApiKey` and RapidAPI subscription active |
+
+---
+
+## Switching to Weekly Schedule
+
+Replace the **Manual Trigger** node with a **Schedule Trigger**:
+
+1. In n8n, delete the Manual Trigger node
+2. Add a Schedule Trigger node
+3. Configure: Every week on Monday at 09:00
+
+Equivalent cron: `0 9 * * 1`
+
+Jobs are freshest early Monday morning — many companies post over the weekend.
 
 ---
 
 ## Credential Summary
 
-| # | Credential | Type | Nodes Using It | Cost |
-|---|---|---|---|---|
-| 1 | SerpAPI | API Key (in Set Job Preferences code) | Search Google Jobs (Bangalore), Search Google Jobs (Remote India) | Free (100/mo) |
-| 2 | Google Gemini API | API Key (in Set Job Preferences code) | Score & Match (Gemini), Generate Cover Letter (Gemini) | Free (30 RPM, 15K TPM, 14.4K RPD) |
-| 3 | Google OAuth2 (Sheets) | OAuth2 | Save to Google Sheets | Free |
-| 3 | Google OAuth2 (Gmail) | OAuth2 | Send Gmail Digest | Free |
+| # | Credential Type | Where Used | Cost |
+|---|---|---|---|
+| 1 | `rapidApiKey` (code field) | Set Job Preferences | Free (200 req/mo) |
+| 2 | `openAiApiKey` (code field) | Set Job Preferences | ~$0.076/run |
+| 3 | `apifyToken` (code field) | Set Job Preferences | ~$0/run (within $5 credit) |
+| 4 | Google Sheets OAuth2 | Read Existing Jobs + Save to Google Sheets | Free |
+| 5 | Gmail OAuth2 | Send Gmail Digest | Free |
 
 ---
 
 ## Troubleshooting
 
-### "Invalid API key" on SerpAPI
-- Verify the key at serpapi.com -> Dashboard
-- Check you haven't exceeded the 100 searches/month free tier
-- Make sure the key is in the `serpApiKey` field in Set Job Preferences
+### "Authorization failed" on OpenAI nodes
+- Verify the key in Set Job Preferences starts with `sk-proj-`
+- Check the key is active at platform.openai.com/api-keys
+- Ensure billing is set up on your OpenAI account
 
-### "Invalid API key" on Gemini nodes
-- Verify the key at aistudio.google.com/apikey
-- Make sure the key is in the `geminiApiKey` field in Set Job Preferences
-- Check you haven't exceeded the rate limits (30 RPM, 15K TPM for Gemma 3 27B)
+### "The service refused the connection" on Naukri
+- Timeout must be 300000ms (5 minutes) — check Search Naukri node → Options
+- The actor takes 4-5 minutes; 120000ms (2 min) will always fail
 
-### "OAuth token expired" on Google Sheets or Gmail
-- Go to the credential in n8n -> click "Sign in with Google" again
-- Make sure you added yourself as a test user in Google Cloud Console
+### "SSL Issue" on Search Naukri
+- Open Search Naukri node → Options → enable **"Ignore SSL Issues"**
+- Same for Search Naukri C# node
 
-### "Redirect URI mismatch" on Google OAuth
-- In Google Cloud Console -> Credentials -> edit your OAuth client
-- Make sure the redirect URI is exactly: `http://localhost:5678/rest/oauth2-credential/callback`
-- No trailing slash, no https (it's localhost)
+### "Too many requests" on Google Sheets
+- The Aggregate Jobs node should prevent this (collapses all jobs into 1 item before the Sheets read)
+- If it still occurs, check that the Aggregate Jobs → Read Existing Jobs connection exists
 
-### "Access blocked: n8n Job Search has not completed Google verification"
-- **Most common cause**: You didn't add yourself as a test user
-- **Fix**: Google Cloud Console -> **APIs & Services** -> **OAuth consent screen** -> **Audience** tab -> **Add Users** -> add your exact Google email
-- After adding, go back to n8n and click **"Sign in with Google"** again
+### "No new jobs this week"
+- All discovered jobs are already in the sheet from a previous run
+- Expected if you run twice in one day — wait for next week when listings refresh
 
-### "This app isn't verified" warning (different from above)
-- This is normal for test/unverified apps -- your app works fine
-- Click **"Advanced"** -> **"Go to n8n Job Search (unsafe)"**
-- This is safe -- it's your own app, not a third party
+### "Task request timed out after 60 seconds" on Set Job Preferences
+- The n8n task runner is busy with another workflow
+- Wait for the other workflow to complete, then retry
+- Permanent fix: add `N8N_RUNNERS_MAX_CONCURRENCY: 10` to docker-compose.yml environment
 
-### "Spreadsheet not found" or "Sheet not found"
-- Double-check the spreadsheet ID (the long string in the URL between `/d/` and `/edit`)
-- Make sure the sheet tab name is **"Job Tracker"** (or matches what's configured in the Save to Google Sheets node)
-- Verify your Google account has edit access to the spreadsheet
+### Google OAuth "Access blocked"
+- Go to Google Cloud Console → APIs & Services → OAuth consent screen → **Audience** tab
+- Click **Add Users** → add your Gmail address → Save
+- Re-authorize in n8n
 
-### "Insufficient permission" on Gmail
-- Your Google OAuth2 credential may not have Gmail scope
-- Delete the Gmail credential in n8n and recreate it
-- Make sure `gmail.send` scope is enabled in your Google Cloud project
+### "Spreadsheet not found" or rows not appearing
+- Verify spreadsheet ID (long string in URL — not the sheet name)
+- Verify the tab is named exactly **"Job Tracker"** (case-sensitive)
+- Verify the Google Sheets credential has edit access to that spreadsheet
 
-### No jobs found for certain roles
-- SerpAPI Google Jobs results vary by location and market demand
-- Try broader role titles (e.g., "Software Engineer" instead of "SDE 2")
-- Try a larger metro area or add "remote" to the location
-- Check that `date_posted:week` isn't filtering too aggressively -- try removing it temporarily
+### Resume PDF not found (ENOENT error)
+- Ensure file is named exactly `your-resume.pdf`
+- Check volume mount in docker-compose.yml: `./N8nJobSearchAutomation/resumes:/home/node/.n8n-files`
+- Run `docker compose ps` to verify container is running
 
-### Resume file not found / ENOENT error
-- Verify the PDF is in `JobSearchAutomation/resumes/` on your host machine
-- Check that Docker is running with `docker compose up -d` from the parent n8n directory
-- Verify the volume mount exists: `./JobSearchAutomation/resumes:/home/node/.n8n-files`
-- Check the `N8N_RESTRICT_FILE_ACCESS_TO` env var includes `/home/node/.n8n-files`
-- Verify the filename in the Read Binary File node matches your actual PDF filename
-
-### Rate limit errors (HTTP 429)
-- The workflow uses `batchSize=1` with `batchInterval=20000ms` (20 seconds between requests)
-- Gemma 3 27B free tier: 30 RPM, 15K TPM
-- If still hitting limits, increase `batchInterval` to 15000ms or 20000ms
-- Consider reducing `maxResults` from 25 to 10 per search
+### Apify billing — checking usage
+- Go to [console.apify.com/billing](https://console.apify.com/billing)
+- $5/month free credit auto-renews monthly
+- At ~$0.01/run × 4 runs/month = ~$0.04/month — far within free credit
 
 ---
 
-## Switching to Daily Schedule
+## Migration to New n8n Instance
 
-To run the workflow automatically every day:
+If moving to a new server or fresh Docker install:
 
-1. Delete the **"Manual Trigger"** node
-2. Add a **"Schedule Trigger"** node
-3. Configure it:
-   - **Trigger Interval**: Days
-   - **Days Between Triggers**: 1
-   - **Trigger at Hour**: 9 (9 AM)
-   - Or use cron expression: `0 9 * * *`
-4. Connect the Schedule Trigger output to the **"Read Resume PDF"** node
-5. **Activate** the workflow (toggle in the top-right)
-
-With daily runs and 2 searches per run (dual-location), you'll use ~60 SerpAPI searches/month, which is within the free tier (100/mo).
-
----
-
-## Migrating to a Different n8n Instance
-
-### Method 1: Export/Import via n8n UI (Easiest)
-
-**Export from current instance:**
-1. Open your workflow in n8n
-2. Click the **three dots menu** in the top-right -> **"Download"**
-3. Credentials are NOT included in the export (for security)
-
-**Import to new instance:**
-1. Open the new n8n instance
-2. Click **"Add workflow"** -> **"Import from file"**
-3. Select the downloaded `.json` file
-4. **Re-configure all 3 credentials** on the new instance
-5. Update the Google Sheet spreadsheet ID in Set Job Preferences
-6. Place your resume PDF in the resumes directory
-7. Configure the Docker volume mount for the resumes directory
-8. Set `N8N_RESTRICT_FILE_ACCESS_TO` to include the resumes mount path
-
-### Method 2: n8n API (Programmatic)
-
-```bash
-# Export
-curl -H "X-N8N-API-KEY: $N8N_API_KEY" \
-  http://localhost:5678/api/v1/workflows/YOUR_WORKFLOW_ID \
-  -o job-search-workflow.json
-
-# Import to new instance
-curl -X POST \
-  -H "X-N8N-API-KEY: $N8N_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d @job-search-workflow.json \
-  http://your-n8n-url:5678/api/v1/workflows
-```
-
-### After Migration Checklist
-
-On the new instance, you must:
-- [ ] Add SerpAPI key to Set Job Preferences node
-- [ ] Add **Gemini API key** to Set Job Preferences node
-- [ ] Create and assign **Google Sheets OAuth2** credential
-- [ ] Create and assign **Gmail OAuth2** credential
-- [ ] Update the **Google Sheet spreadsheet ID** in Set Job Preferences
-- [ ] Place your **resume PDF** in the resumes directory
-- [ ] Configure the **Docker volume mount** for the resumes directory
-- [ ] Set **`N8N_RESTRICT_FILE_ACCESS_TO`** to include `/home/node/.n8n-files`
-- [ ] Update the **Google OAuth2 redirect URI** to match the new instance URL
-- [ ] Update the **Read Binary File** node path if needed
-- [ ] Test run and verify results appear in Google Sheet and Gmail
+- [ ] Import `exports/job-search-automation.json`
+- [ ] Set `rapidApiKey`, `openAiApiKey`, `apifyToken`, `yourEmail`, `spreadsheetId` in Set Job Preferences
+- [ ] Create and link **Google Sheets OAuth2** credential to Save to Google Sheets + Read Existing Jobs
+- [ ] Create and link **Gmail OAuth2** credential to Send Gmail Digest
+- [ ] Update OAuth redirect URI if n8n is on a different URL/port
+- [ ] Place resume PDF at `resumes/your-resume.pdf`
+- [ ] Configure Docker volume mount for resumes
+- [ ] Test run and verify Google Sheet + Gmail output

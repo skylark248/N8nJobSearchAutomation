@@ -1,78 +1,95 @@
 # n8n Job Search Automation
 
-Automated pipeline that searches for jobs matching your resume, scores them with AI, generates tailored cover letters, and delivers a digest email -- fully hands-free.
+Automated pipeline that searches for .NET/React developer jobs in Bangalore, scores each against your resume with GPT-4o-mini, generates tailored cover letters, saves results to Google Sheets, and sends a Gmail digest — fully hands-free.
 
-**Pipeline:** Read Resume PDF -> Extract PDF Text -> Set Job Preferences (roles, locations, API keys) -> Search Google Jobs via SerpAPI (dual-location: Bangalore onsite/hybrid + India remote) -> Parse & normalize results -> Filter duplicates -> Gemma 3 27B scores each job against resume (0-100) -> Filter top matches (score >= 50) -> Generate tailored cover letters -> Save to Google Sheets -> Send Gmail digest email
-
-**Cost:** $0/month (all free tiers)
+**Proven results:** 211 unique raw jobs → 71 final matches in first run (score ≥ 75, range 75-85).
 
 ---
 
 ## How It Works
 
 ```
-Read Resume PDF (Binary)
+Read Resume PDF
     |
     v
 Extract PDF Text
     |
     v
-Set Job Preferences (17 roles, dual-location, API keys, minScore=50)
+Set Job Preferences  (7 queries, minScore=75, API keys)
+    |           |           |
+    v           v           v
+Search JSearch  Naukri .NET  Naukri C#
+(7 searches,    (Apify,      (Apify,
+ 4 pages each)   ~20-30 jobs) ~30-40 jobs)
+    |           |           |
+    v           v           v
+    Merge Search Results (append)
     |
     v
-Search Google Jobs - Bangalore (SerpAPI: onsite/hybrid, 25 results, date_posted:week)
+Parse Job Results   (handles JSearch + Naukri dual formats)
     |
     v
-Search Google Jobs - Remote India (SerpAPI: remote jobs, 25 results, date_posted:week)
+Filter Duplicates   (~210 unique jobs)
     |
     v
-Merge Job Results (combine both location searches)
+Aggregate Jobs      (collapses N items → 1, prevents rate limit)
+    |           |
+    v           v
+Read Existing Jobs  (Google Sheets, runs exactly once)
     |
     v
-Parse & Normalize Results (extract title, company, location, link)
+Sync Dedup Inputs   (ensures pipeline runs even on empty sheet)
     |
     v
-Filter Duplicates (deduplicate by company + title)
+Filter New Jobs Only  (cross-run dedup: skip already-seen jobs)
     |
     v
-Gemma 3 27B scores each job against your resume (0-100 match score)
-    |           [batchSize=1, batchInterval=20000ms for rate limit protection]
-    v
-Parse AI Scores (extract score, recommendation, reasoning, missing skills)
+Prepare Score Request
     |
     v
-Filter Top Matches (score >= 50 only)
+Score OpenAI API    (GPT-4o-mini, batchSize=1, 3s interval)
     |
     v
-Generate Tailored Cover Letters (Gemma 3 27B, one per job)
-    |           [batchSize=1, batchInterval=20000ms]
-    v
-Format for Google Sheets (add date, status columns)
+Parse AI Score
     |
     v
-Save to Google Sheets ("Job Tracker" spreadsheet)
+Filter Top Matches  (score >= 75, ~30-50 jobs)
     |
     v
-Build Email Digest (HTML summary of new matches)
+Prepare Cover Letter
     |
     v
-Send Gmail Notification (digest with top matches + cover letters)
+Cover Letter OpenAI API
+    |
+    v
+Attach Cover Letter
+    |
+    v
+Save to Google Sheets  (appendOrUpdate, dedup on Title+Company+Link)
+    |
+    v
+Build Email Digest  (HTML, sorted by score, expandable cover letters)
+    |
+    v
+Send Gmail Digest
+    |
+    v
+Success Summary
 ```
 
-**16 nodes, 15 connections. Runtime: 5-15 minutes depending on job count.**
+**27 nodes, 26 connections. Runtime: ~21 minutes per run.**
 
 ---
 
 ## Prerequisites
 
-Before you start, make sure you have:
-
 - **Docker** installed ([Get Docker](https://docs.docker.com/get-docker/))
-- **Git** installed ([Get Git](https://git-scm.com/downloads))
-- **SerpAPI account** (free tier: 100 searches/month) -- [serpapi.com](https://serpapi.com)
-- **Google Gemini API key** (free, no billing required) -- [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-- **Google account** with Google Sheets and Gmail access
-- **Your resume** in PDF format
+- **Git** installed
+- **RapidAPI account** — subscribe to JSearch Basic (free: 200 req/month) at [rapidapi.com](https://rapidapi.com)
+- **OpenAI account** — pay-as-you-go API key from [platform.openai.com](https://platform.openai.com/api-keys) (~$0.075/run)
+- **Apify account** — free $5/month credit from [apify.com](https://apify.com) (covers ~60+ runs)
+- **Google account** with Sheets and Gmail access
+- **Your resume** as `resumes/your-resume.pdf`
 
 ---
 
@@ -85,92 +102,107 @@ git clone --recurse-submodules https://github.com/skylark248/N8nJobSearchAutomat
 cd N8nJobSearchAutomation
 ```
 
-> **Already cloned without `--recurse-submodules`?** Run this to fetch the submodules:
+> Already cloned without `--recurse-submodules`?
 > ```bash
 > git submodule init && git submodule update
 > ```
 
-### Step 2: Set Up Environment
+### Step 2: Start n8n
 
-```bash
-cp .env.example .env
+This workflow lives inside a parent `n8n/` directory that also holds n8n's Docker runtime:
+
+```
+n8n/
+├── docker-compose.yml
+├── database.sqlite
+├── N8nJobSearchAutomation/   ← this repo
+│   └── resumes/your-resume.pdf
+└── YtShortsAutomation/       ← optional sibling project
 ```
 
-Open `.env` and fill in your API keys (this file is for your reference -- credentials are configured inside n8n, not read from `.env`).
-
-### Step 3: Start n8n
-
 ```bash
+# From the parent n8n/ directory (where docker-compose.yml is)
 docker compose up -d
 ```
 
-Run this from the **parent n8n directory** (not from JobSearchAutomation/). This uses the custom Docker image with FFmpeg baked in. The `docker-compose.yml` mounts `./JobSearchAutomation/resumes` to `/home/node/.n8n-files` inside the container so your resume PDF survives restarts.
+Open [http://localhost:5678](http://localhost:5678) in your browser.
 
-### Step 4: Open n8n
+> **Key docker-compose.yml settings required:**
+> ```yaml
+> environment:
+>   N8N_RUNNERS_TASK_TIMEOUT: 900   # 15 min — Naukri actor takes 4-5 min
+>   N8N_RESTRICT_FILE_ACCESS_TO: /home/node/.n8n;/home/node/.n8n-files
+> volumes:
+>   - ./N8nJobSearchAutomation/resumes:/home/node/.n8n-files
+> ```
 
-Open [http://localhost:5678](http://localhost:5678) in your browser. Create an account when prompted (this is your local instance, data stays on your machine).
+### Step 3: Import the Workflow
 
-### Step 5: Import the Workflow
+1. In n8n → click **"Add workflow"** → **"Import from file"**
+2. Select `exports/job-search-automation.json`
 
-1. In n8n, click **"Add workflow"** (or the import icon)
-2. Click **"Import from file"**
-3. Select `exports/job-search-automation.json` from the cloned repo
-4. The full 16-node workflow appears ready to configure
+### Step 4: Configure Credentials
 
-### Step 6: Configure Credentials
+Open the **Set Job Preferences** node and fill in these 5 fields:
 
-You need 3 credentials configured **inside n8n**:
+| Field | Value | Where to get |
+|---|---|---|
+| `rapidApiKey` | Your RapidAPI key | rapidapi.com → Subscribe to JSearch Basic (free) |
+| `openAiApiKey` | `sk-proj-...` | platform.openai.com/api-keys |
+| `apifyToken` | `apify_api_...` | console.apify.com/account/integrations |
+| `yourEmail` | Your Gmail address | — |
+| `spreadsheetId` | Google Sheet ID | From Sheet URL: `/d/SPREADSHEET_ID/edit` |
 
-| # | Credential | Where to Get | Cost |
-|---|---|---|---|
-| 1 | **SerpAPI Key** | [serpapi.com](https://serpapi.com) -> Dashboard -> API Key | Free (100/mo) |
-| 2 | **Gemini API Key** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) -> Create API Key | Free (30 RPM) |
-| 3 | **Google OAuth2** | [Google Cloud Console](https://console.cloud.google.com) -> Sheets API + Gmail API | Free |
+Then configure Google OAuth2 (see [docs/setup-guide.md](docs/setup-guide.md)):
+- **Google Sheets OAuth2** → link to "Save to Google Sheets" and "Read Existing Jobs" nodes
+- **Gmail OAuth2** → link to "Send Gmail Digest" node
 
-- The **SerpAPI key** goes in the **Set Job Preferences** node (`serpApiKey` field in the code)
-- The **Gemini API key** goes in the **Set Job Preferences** node (`geminiApiKey` field in the code)
-- The **Google OAuth2** credential is created in n8n's credential manager and linked to the Google Sheets and Gmail nodes
+### Step 5: Place Your Resume
 
-**Step-by-step instructions for each credential:** See [docs/setup-guide.md](docs/setup-guide.md)
+```bash
+cp /path/to/your-resume.pdf resumes/your-resume.pdf
+```
 
-### Step 7: Create Google Sheet
+The Docker volume mount makes it available at `/home/node/.n8n-files/your-resume.pdf` inside the container.
 
-1. Go to [Google Sheets](https://sheets.google.com) and create a new spreadsheet
-2. Name it **"Job Tracker"**
-3. In row 1, add these headers (columns A through L):
+### Step 6: Create Google Sheet
+
+1. Create a new Google Sheet, rename to **Job Tracker**
+2. Add these headers in row 1 (A–L):
 
 | A | B | C | D | E | F | G | H | I | J | K | L |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Date | Job Title | Company | Location | Match Score | Recommendation | Match Reason | Missing Skills | Apply Link | Cover Letter | Status | Applied Date |
 
-4. Copy the **spreadsheet ID** from the URL: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
-5. In n8n, open the **"Set Job Preferences"** node and paste your spreadsheet ID in the `spreadsheetId` field
+3. Copy the spreadsheet ID from the URL and paste into `spreadsheetId` in Set Job Preferences.
 
-### Step 8: Place Your Resume PDF
+### Step 7: Test Run
 
-1. Place your resume PDF file in the `resumes/` folder (any filename ending in `.pdf`)
-2. The workflow uses a **Read Binary File** node that reads from `/home/node/.n8n-files/` inside the Docker container
-3. The `docker-compose.yml` mounts `./JobSearchAutomation/resumes` to `/home/node/.n8n-files`, so the file is accessible automatically
-4. The **Extract From File** node converts the PDF to plain text for AI scoring
+Click **"Test Workflow"** (play button). Wait ~21 minutes. Check your Google Sheet and Gmail inbox.
 
-> **Note:** Only one PDF should be in the `resumes/` folder. If multiple are present, update the filename in the Read Binary File node.
+---
 
-### Step 9: Update Set Job Preferences
+## What to Expect
 
-In the **"Set Job Preferences"** node, update these fields:
+### First Run (empty sheet)
+All discovered jobs are new. Based on execution #70:
 
-- `yourEmail` -- your Gmail address for receiving the digest
-- `spreadsheetId` -- your Google Sheet ID from Step 7
-- `targetRoles` -- the job titles to search for (17 defaults provided)
-- `locations` -- dual-location search configuration (Bangalore + India remote by default)
+| Stage | Count |
+|---|---|
+| Raw unique jobs found | ~211 |
+| After cross-run dedup | ~211 (all new — first run) |
+| Final matches (score ≥ 75) | ~30-70 |
+| Cover letters generated | Same as final matches |
+| Rows saved to Google Sheets | Same as final matches |
 
-### Step 10: First Test Run
+### Subsequent Runs
+Cross-run deduplication skips jobs already in the sheet. Expect 20-60 genuinely new jobs per run depending on weekly listing churn.
 
-1. Click **"Test Workflow"** (play button in top-right)
-2. Wait 5-15 minutes for the full pipeline to complete (rate-limited HTTP calls)
-3. Check your Google Sheet -- new job matches should appear
-4. Check your Gmail -- you should receive a digest email with top matches
-5. Once verified, optionally switch to a daily schedule (see Customization below)
+### Score Distribution
+GPT-4o-mini tends to score conservatively for this profile:
+- Score 85+: Strong apply — role closely matches .NET/React background
+- Score 75-84: Apply — good match, some gaps
+- Score 60-74: Maybe — filtered out at current threshold
 
 ---
 
@@ -178,120 +210,129 @@ In the **"Set Job Preferences"** node, update these fields:
 
 ```
 .
-├── README.md                              # You are here
-├── CLAUDE.md                              # Claude Code AI assistant config
-├── .env.example                           # Template for API keys (copy to .env)
-├── .gitignore                             # Keeps secrets out of git
-├── .gitmodules                            # Git submodule references
+├── README.md
+├── CLAUDE.md                 # Claude Code AI config (full technical reference)
+├── .env.example              # Template for environment variables
+├── .gitignore
 │
 ├── docs/
-│   ├── setup-guide.md                     # Step-by-step credential setup
-│   └── workflow-reference.md              # Complete node-by-node documentation
+│   ├── setup-guide.md        # Step-by-step credential setup
+│   └── workflow-reference.md # Complete 27-node documentation
 │
 ├── exports/
-│   └── job-search-automation.json         # Importable n8n workflow file
+│   └── job-search-automation.json  # Importable n8n workflow (no credentials)
 │
 ├── resumes/
-│   ├── README.txt                         # Instructions for placing your resume
-│   └── .gitkeep                           # Keeps folder in git (PDFs are gitignored)
+│   ├── your-resume.pdf       # Place your resume here (gitignored)
+│   ├── README.txt
+│   └── .gitkeep
 │
-├── n8n-mcp/                               # MCP server for Claude Code (git submodule)
-└── n8n-skills/                            # Claude Code skills (git submodule)
+├── n8n-mcp/                  # MCP server for Claude Code (git submodule)
+└── n8n-skills/               # Claude Code skills (git submodule)
 ```
 
 ---
 
 ## Cost Breakdown
 
-| Service | Per Run | Monthly (30 runs) |
+| Service | Per Run | Monthly (4 runs) |
 |---|---|---|
-| SerpAPI (job searches) | $0.00 | $0.00 (free tier: 100/mo) |
-| Gemma 3 27B (job scoring) | $0.00 | $0.00 (free tier: 30 RPM, 15K TPM) |
-| Gemma 3 27B (cover letters) | $0.00 | $0.00 (free tier) |
-| Google Sheets API | $0.00 | $0.00 |
-| Gmail API | $0.00 | $0.00 |
-| **Total** | **$0.00** | **$0.00** |
+| JSearch Basic (RapidAPI) | $0.00 | $0.00 (free: 200 req/mo, uses 28) |
+| Apify Naukri scraper (2 searches) | ~$0.01 | ~$0.04 (within $5/mo free credit) |
+| OpenAI GPT-4o-mini scoring (~200 jobs × ~5500 tokens) | ~$0.055 | ~$0.22 |
+| OpenAI GPT-4o-mini cover letters (~40 jobs × ~5500 tokens) | ~$0.011 | ~$0.04 |
+| Google Sheets + Gmail | $0.00 | $0.00 |
+| **Total** | **~$0.076** | **~$0.30** |
 
 ---
 
 ## Target Roles
 
-The workflow searches for these 17 roles by default (configurable in the Set Job Preferences node):
+Backend-heavy Full Stack Developer (.NET + React), ~5 years experience, **Bangalore only** (no India-wide remote):
 
-- Backend Developer
-- Senior Backend Developer
-- .NET Developer
-- Senior .NET Developer
-- Full Stack Developer
-- Senior Full Stack Developer
-- Software Engineer 2
-- SDE 2
-- Senior Software Engineer
-- C# Developer
-- ASP.NET Developer
-- Software Engineer
-- Backend Engineer
-- Application Developer
-- Software Developer
-- AI Platform Engineer
-- Backend Engineer AI
-- Gen AI Engineer
+- SDE 2 / Software Development Engineer 2
+- Software Developer / Software Developer 2
+- Software Engineer 2 / Senior Software Engineer
+- .NET Developer / Senior .NET Developer
+- Backend Engineer / Senior Backend Engineer
+- Full Stack Engineer / Senior Full Stack Engineer
+
+### JSearch Queries (7 Bangalore-targeted)
+- `.NET Developer Bangalore India`
+- `Backend Engineer .NET Bangalore India`
+- `Full Stack Engineer React .NET Bangalore India`
+- `SDE 2 .NET Bangalore India`
+- `Senior Software Engineer .NET Bangalore India`
+- `C# Developer Bangalore India`
+- `Software Engineer II .NET Bangalore India`
+
+### Naukri Queries (2 via Apify)
+- `.NET Developer` — Bangalore, 5yr exp, last 7 days
+- `C# Developer` — Bangalore, 5yr exp, last 7 days
+
+---
+
+## Job Sources
+
+| Source | How | Jobs/Run | Cost |
+|---|---|---|---|
+| **JSearch** (RapidAPI) | LinkedIn + Indeed + Glassdoor + Google Jobs | ~140 raw (7 queries × 4 pages × 10 jobs) | Free |
+| **Naukri .NET** (Apify) | `nuclear_quietude~naukri-job-scraper` | ~20-30 raw | ~$5/mo credit |
+| **Naukri C#** (Apify) | same actor | ~30-40 raw | included |
+
+After deduplication: ~200-210 unique. Cross-run dedup skips already-seen. ~30-50 pass score ≥ 75.
 
 ---
 
 ## Customization
 
-| What | How |
-|---|---|
-| Change target job titles | Edit "Set Job Preferences" node -- update `targetRoles` array |
-| Change location | Edit "Set Job Preferences" node -- update location configuration (supports dual-location) |
-| Change minimum match score | Edit "Set Job Preferences" node -- change `minScore` (default: 50) |
-| Switch to daily schedule | Replace Manual Trigger with Schedule Trigger (cron: `0 9 * * *` for daily 9 AM) |
-| Add more job sources | Add HTTP Request nodes for LinkedIn, Indeed, or other APIs before the merge step |
-| Change AI model | Update the model name in Score & Match and Generate Cover Letter HTTP Request URLs (e.g., swap `gemma-3-27b-it` for another model) |
-| Change email recipient | Edit "Set Job Preferences" node -- update `yourEmail` field |
-| Add Slack notifications | Add Slack node after Gmail notification |
+| What | Where | Current Value |
+|---|---|---|
+| Min score threshold | `minScore` in Set Job Preferences | 75 |
+| JSearch queries | `searchQuery` strings in Set Job Preferences | 7 Bangalore .NET/C# queries |
+| Naukri .NET search | `naukriJobTitle`/`naukriLocation` in Set Naukri Queries | `.NET Developer`, Bangalore |
+| Naukri C# search | `naukriJobTitle`/`naukriLocation` in Set Naukri Queries (C#) | `C# Developer`, Bangalore |
+| JSearch pages/query | `num_pages` in Search Google Jobs | 4 |
+| Naukri jobs/search | `no_of_jobs` in Search Naukri nodes | 30 |
+| Run frequency | Trigger node | Manual (see schedule section below) |
 
-See [docs/workflow-reference.md](docs/workflow-reference.md) for detailed node-by-node documentation.
+### Switch to Weekly Schedule
+
+Replace Manual Trigger with Schedule Trigger — Monday 9 AM:
+
+```json
+{
+  "type": "n8n-nodes-base.scheduleTrigger",
+  "typeVersion": 1.2,
+  "parameters": {
+    "rule": {
+      "interval": [{ "triggerAtHour": 9, "triggerAtMinute": 0, "triggerAtDay": 1 }]
+    }
+  }
+}
+```
 
 ---
 
 ## Using with Claude Code (Optional)
 
-This repo includes two git submodules for building/modifying n8n workflows with [Claude Code](https://claude.ai/code):
+This repo includes two git submodules for building/modifying workflows with [Claude Code](https://claude.ai/code):
 
-- **`n8n-mcp/`** -- MCP server that gives Claude Code direct access to 1,084+ n8n nodes and workflow management tools
-- **`n8n-skills/`** -- Expert skills for expression syntax, validation, node configuration, and workflow patterns
+- **`n8n-mcp/`** — MCP server giving Claude Code direct access to n8n workflow management
+- **`n8n-skills/`** — Expert skills for n8n expression syntax, validation, and node configuration
 
-### Setup
+```bash
+claude mcp add n8n-mcp \
+  -e MCP_MODE=stdio \
+  -e LOG_LEVEL=error \
+  -e DISABLE_CONSOLE_OUTPUT=true \
+  -e N8N_API_URL=http://localhost:5678 \
+  -e N8N_API_KEY=YOUR_N8N_API_KEY \
+  -s local \
+  -- npx n8n-mcp
+```
 
-1. Make sure submodules are cloned (done automatically if you used `--recurse-submodules`):
-   ```bash
-   git submodule init && git submodule update
-   ```
-
-2. Install the MCP server dependencies:
-   ```bash
-   cd n8n-mcp && npm install && cd ..
-   ```
-
-3. Get your n8n API key: Open n8n -> **Settings** -> **API** -> **Create API Key**
-
-4. Register the MCP server with Claude Code:
-   ```bash
-   claude mcp add n8n-mcp \
-     -e MCP_MODE=stdio \
-     -e LOG_LEVEL=error \
-     -e DISABLE_CONSOLE_OUTPUT=true \
-     -e N8N_API_URL=http://localhost:5678 \
-     -e N8N_API_KEY=YOUR_N8N_API_KEY \
-     -s local \
-     -- npx n8n-mcp
-   ```
-
-5. Start a **new Claude Code conversation** (MCP tools load on conversation start)
-
-Then Claude Code can create, modify, validate, and deploy n8n workflows conversationally.
+Get your API key: n8n → Settings → API → Create API Key. Then start a **new** Claude Code conversation.
 
 ---
 
@@ -299,42 +340,14 @@ Then Claude Code can create, modify, validate, and deploy n8n workflows conversa
 
 | Error | Fix |
 |---|---|
-| "Invalid API key" on SerpAPI | Verify key at serpapi.com/dashboard, check free tier quota remaining |
-| "Invalid API key" on Gemini | Check key at aistudio.google.com/apikey, verify it's in Set Job Preferences |
-| "Access blocked" on Google OAuth | Add yourself as test user: Google Cloud Console -> OAuth consent screen -> Audience -> Add Users |
-| "This app isn't verified" | Click Advanced -> "Go to n8n (unsafe)" -- this is your own app, safe to proceed |
-| "Redirect URI mismatch" | Verify URI is exactly `http://localhost:5678/rest/oauth2-credential/callback` |
-| "Spreadsheet not found" | Verify the spreadsheet ID is correct and your Google account has access |
-| "Insufficient permissions" on Sheets | Re-authorize Google OAuth2 with Sheets scope enabled |
-| No jobs found | Try broader role titles or different location in Set Job Preferences |
-| Rate limit errors (429) | The workflow uses batchSize=1 with 20s intervals; if still hitting limits, increase batchInterval |
-| Resume not found | Ensure PDF is in `resumes/` folder and Docker is running with the volume mount |
-| "ENOENT" file read error | Check that `N8N_RESTRICT_FILE_ACCESS_TO` includes `/home/node/.n8n-files` in docker-compose.yml |
-| n8n-mcp or n8n-skills folders are empty | Run `git submodule init && git submodule update` |
+| "Authorization failed" on Score OpenAI API | Key must start with `sk-proj-` in Set Job Preferences |
+| "Service refused connection" on Naukri | Timeout < 300000ms — check Search Naukri node → Options |
+| "SSL Issue" on Naukri | Enable "Ignore SSL Issues" in Search Naukri node → Options |
+| "Too many requests" on Google Sheets | Should not occur — Aggregate Jobs node collapses items before Sheets read |
+| "Task request timed out" on Set Job Preferences | Another workflow using task runner — wait and retry, or add `N8N_RUNNERS_MAX_CONCURRENCY=10` to docker-compose.yml |
+| Resume not found / ENOENT | Verify PDF at `resumes/your-resume.pdf` and Docker volume mount exists |
+| "Access blocked" on Google OAuth | Add yourself as test user: Google Cloud Console → OAuth consent screen → Audience |
+| 0 rows in Google Sheet | Check Sheets credential and that tab is named exactly **"Job Tracker"** |
+| "No new jobs this week" error | All discovered jobs already in sheet — expected after first run if run again same day |
 
-Full troubleshooting: [docs/setup-guide.md](docs/setup-guide.md#troubleshooting)
-
----
-
-## Migrating to Another n8n Instance
-
-1. Import `exports/job-search-automation.json` on the new instance
-2. Re-configure all 3 credentials (SerpAPI key, Gemini API key, Google OAuth2)
-3. Update the Google Sheet spreadsheet ID in Set Job Preferences
-4. Place your resume PDF in the resumes directory and ensure the volume mount is configured
-5. Update `N8N_RESTRICT_FILE_ACCESS_TO` environment variable to include the resumes mount path
-6. Test run to verify jobs are found and saved
-
-See [docs/setup-guide.md](docs/setup-guide.md#migrating-to-a-different-n8n-instance) for full migration guide.
-
----
-
-## Future Plans
-
-- Add LinkedIn Jobs API as an additional source
-- Implement auto-apply for select job boards
-- Add interview preparation notes generated by AI
-- Track application status changes automatically
-- A/B test different cover letter styles for response rates
-- Add Slack/Discord notification channel support
-- Explore upgrading to larger AI models as free tiers expand
+Full documentation: [docs/setup-guide.md](docs/setup-guide.md) | [docs/workflow-reference.md](docs/workflow-reference.md)

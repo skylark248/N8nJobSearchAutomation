@@ -51,3 +51,12 @@ n8n-mcp/dist/
 n8n-mcp/node_modules/
 n8n-mcp/coverage/
 n8n-skills/node_modules/
+
+# Claude Code agent skills cache
+.agents/
+
+# Execution debug data
+exports/executions.json
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
