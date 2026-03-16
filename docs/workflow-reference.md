@@ -52,6 +52,7 @@ Filter New Jobs Only (skip already-seen jobs)
 
 ```
 Filter New Jobs Only
+    → Filter Stack & Quality (stack/exp/location/company filters)
     → Prepare Score Request
     → Score OpenAI API (batch 1, 3s)
     → Parse AI Score
@@ -67,7 +68,7 @@ Filter New Jobs Only
 
 ---
 
-## Node Details (27 Nodes)
+## Node Details (28 Nodes)
 
 ### Node 1: Manual Trigger
 - **ID**: `trigger` | **Type**: `n8n-nodes-base.manualTrigger` v1
@@ -104,10 +105,10 @@ spreadsheetId: '...'
 ```
 .NET Developer Bangalore India
 Backend Engineer .NET Bangalore India
-Full Stack Engineer React .NET Bangalore India
+Microservices .NET Backend Engineer Bangalore India   ← targets architecture depth
 SDE 2 .NET Bangalore India
 Senior Software Engineer .NET Bangalore India
-C# Developer Bangalore India
+Azure .NET Developer Bangalore India                  ← targets Azure DevOps background
 Software Engineer II .NET Bangalore India
 ```
 
@@ -211,14 +212,35 @@ return [{ json: { jobs, count: jobs.length } }];
 - On subsequent runs: only truly new listings pass (~20-60/week)
 - Throws "No new jobs this week" if everything was already seen
 
-### Node 17: Prepare Score Request
+### Node 17: Filter Stack & Quality
+- **ID**: `filterStackQuality` | **Type**: `n8n-nodes-base.code` v2
+- Pre-score filter — runs **before** OpenAI to save scoring tokens on irrelevant jobs
+- **7 checks applied in order:**
+  1. **Stack blacklist** — removes Java/Node.js/Python/Ruby/Go/PHP/Android/iOS/Flutter/React Native/Data Science/Salesforce/SAP-primary roles by title pattern. `.NET`/`C#`/`ASP.NET`/`dotnet` anywhere in title overrides the blacklist.
+  2. **Too junior** — removes Fresher/Internship/Junior/Trainee/Graduate titles and "0-2 years" patterns.
+  3. **Too senior** — removes Principal/Staff/VP/Vice President/CTO/Engineering Director titles.
+  4. **Experience range** — removes jobs whose description says "8+ years", "minimum 8 years", or "at least 8 years" required. Ranges like "3-8 years" are NOT blocked (candidate falls in range).
+  5. **Bangalore location guard** — removes jobs whose location mentions another Indian city (Mumbai, Hyderabad, Chennai, Pune, Delhi, Gurugram/Gurgaon, Noida, Kolkata, etc.) without mentioning Bangalore/Bengaluru. Jobs with blank location or "Remote" pass through.
+  6. **Stub filter** — removes descriptions shorter than 150 chars (placeholder/scraped stubs).
+  7. **Company cap** — keeps at most 3 roles per company per run, sorted by title seniority (Senior > SDE 2/SE II > other). Company name normalized by stripping India/Pvt/Ltd/Technologies/Solutions suffixes.
+- Console log reports all 6 removal counts + company cap drops
+- Throws if 0 jobs remain after filtering
+
+### Node 18: Prepare Score Request
 - **ID**: `scoreMatch` | **Type**: `n8n-nodes-base.code` v2
 - Maps all new job items to scoring payloads
 - Builds `aiPayload = JSON.stringify({ model: 'gpt-4o-mini', messages, temperature: 0.1, response_format: { type: 'json_object' } })`
-- System prompt: recruiter scoring a Backend/.NET/React dev with 5yr exp. No JSON examples in prompt (causes `json_validate_failed` 400 error).
+- System prompt uses **4-step explicit arithmetic scoring** (v9.4 — fixes 85-score ceiling):
+  - **Step 1 BASE**: 82-88 (strong .NET, architecture requirements, 3-6yr), 70-81 (good .NET, 3-7yr), 50-69 (partial), 0-49 (no .NET)
+  - **Step 2 BOOST +8 each** (max +16): Fintech/BFSI/Healthcare/MedTech domain; Azure/Azure DevOps; Kafka/RabbitMQ/Redis/event-driven; microservices/distributed systems design
+  - **Step 3 PENALIZE -15 each**: frontend-primary role; <2yr required; >7yr required; no .NET/C# mention
+  - **Step 4**: Clamp 0-100
+  - 6 calibration examples anchor the scale: "base 83 + Azure +8 = 91", "Fintech .NET + microservices → 102 → capped 100"
+  - `matchReason` must state which boosts/penalties were applied
+  - **Do NOT add embedded JSON examples** in this prompt — causes `json_validate_failed` 400 error
 - Passes `openAiApiKey` inline on each item
 
-### Node 18: Score OpenAI API
+### Node 19: Score OpenAI API
 - **ID**: `scoreGroqApi` | **Type**: `n8n-nodes-base.httpRequest` v4.2
 - **URL**: `https://api.openai.com/v1/chat/completions`
 - **Auth**: `Authorization: Bearer {{ $json.openAiApiKey }}`
@@ -226,34 +248,34 @@ return [{ json: { jobs, count: jobs.length } }];
 - **Batching**: `batchSize=1`, `batchInterval=3000ms`
 - **retryOnFail**: false (fail fast — retries waste tokens)
 
-### Node 19: Parse AI Score
+### Node 20: Parse AI Score
 - **ID**: `parseScore` | **Type**: `n8n-nodes-base.code` v2 | `runOnceForEachItem`
 - Reads OpenAI response from `$input.item.json.choices[0].message.content`
 - Gets job data from `$('Prepare Score Request').item` — NOT from Filter New Jobs
 - Output fields: `score`, `matchReason`, `missingSkills[]`, `keyMatchingSkills[]`, `experienceFit`, `recommendation`
 
-### Node 20: Filter Top Matches
+### Node 21: Filter Top Matches
 - **ID**: `filterMatches` | **Type**: `n8n-nodes-base.code` v2
 - Filters `score >= minScore` (75). Throws error with top score if nothing passes.
 - Reads `minScore` from `$('Set Job Preferences').first().json.minScore`
 
-### Node 21: Prepare Cover Letter
+### Node 22: Prepare Cover Letter
 - **ID**: `generateCoverLetter` | **Type**: `n8n-nodes-base.code` v2
 - Same pattern as Prepare Score Request
 - Model: `gpt-4o-mini`, no `response_format` (plain text output)
 - System: "under 300 words, plain text, no markdown"
 
-### Node 22: Cover Letter OpenAI API
+### Node 23: Cover Letter OpenAI API
 - **ID**: `coverLetterGroqApi` | **Type**: `n8n-nodes-base.httpRequest` v4.2
 - Identical config to Score OpenAI API: Bearer auth, raw body, batchSize=1, batchInterval=3s, retryOnFail: false
 
-### Node 23: Attach Cover Letter
+### Node 24: Attach Cover Letter
 - **ID**: `addCoverLetter` | **Type**: `n8n-nodes-base.code` v2 | `runOnceForEachItem`
 - Reads cover letter from `$input.item.json.choices[0].message.content`
 - Gets job data from `$('Prepare Cover Letter').item` — NOT from Filter Top Matches
 - Adds `processedDate` field
 
-### Node 24: Save to Google Sheets
+### Node 25: Save to Google Sheets
 - **ID**: `saveToSheet` | **Type**: `n8n-nodes-base.googleSheets` v4.5
 - **Operation**: `appendOrUpdate`
 - **Matching columns**: Job Title + Company + Apply Link (prevents duplicates across runs)
@@ -262,29 +284,31 @@ return [{ json: { jobs, count: jobs.length } }];
 - **Status column excluded** — preserves user's "Applied"/"Interview" edits on re-runs
 - Uses `__rl: true` with `mode: "id"` for document reference
 
-### Node 25: Build Email Digest
+### Node 26: Build Email Digest
 - **ID**: `buildEmail` | **Type**: `n8n-nodes-base.code` v2
+- Pulls `keyMatchingSkills` from `$('Attach Cover Letter').all()` by array index — this field is not persisted to Google Sheets by `appendOrUpdate`, so it must be read before the Sheets step. Merges it into each job item before sorting.
 - Sorts jobs by score using `getScore(j) = Number(j['Match Score'] || j.score || 0)`
   - Must check `j['Match Score']` first — after `Save to Google Sheets`, output uses column headers as keys, not camelCase
 - HTML features:
   - Gradient header (#667eea → #764ba2)
   - Stats section: total matches + top score
   - Score colors: green ≥ 85, yellow ≥ 70, red < 70
+  - **Key skills as green tags** (up to 5, from `keyMatchingSkills`)
   - Expandable cover letters via `<details>` tags
   - Apply buttons as HTML links
 
-### Node 26: Send Gmail Digest
+### Node 27: Send Gmail Digest
 - **ID**: `sendDigest` | **Type**: `n8n-nodes-base.gmail` v2.1
 - `emailType: "html"` (default in v2.1 — no explicit `operation` needed)
 - Subject: `{N} Job Matches (Top: {score}/100) - {date}`
 
-### Node 27: Success Summary
+### Node 28: Success Summary
 - **ID**: `successOutput` | **Type**: `n8n-nodes-base.code` v2
 - Returns `{ success: true, matchCount, topScore, emailSent, sentTo, timestamp }`
 
 ---
 
-## Connection Map (26 Connections)
+## Connection Map (27 Connections)
 
 ```
 Manual Trigger              → Read Resume PDF               (main)
@@ -305,7 +329,8 @@ Aggregate Jobs              → Sync Dedup Inputs             (main, input 0)
 Aggregate Jobs              → Read Existing Jobs            (main)
 Read Existing Jobs          → Sync Dedup Inputs             (main, input 1)
 Sync Dedup Inputs           → Filter New Jobs Only          (main)
-Filter New Jobs Only        → Prepare Score Request         (main)
+Filter New Jobs Only        → Filter Stack & Quality        (main)
+Filter Stack & Quality      → Prepare Score Request         (main)
 Prepare Score Request       → Score OpenAI API              (main)
 Score OpenAI API            → Parse AI Score                (main)
 Parse AI Score              → Filter Top Matches            (main)

@@ -44,6 +44,9 @@ Sync Dedup Inputs   (ensures pipeline runs even on empty sheet)
 Filter New Jobs Only  (cross-run dedup: skip already-seen jobs)
     |
     v
+Filter Stack & Quality  (stack blacklist, exp range, location, company cap)
+    |
+    v
 Prepare Score Request
     |
     v
@@ -77,7 +80,7 @@ Send Gmail Digest
 Success Summary
 ```
 
-**27 nodes, 26 connections. Runtime: ~21 minutes per run.**
+**28 nodes, 27 connections. Runtime: ~21 minutes per run.**
 
 ---
 
@@ -260,10 +263,10 @@ Backend-heavy Full Stack Developer (.NET + React), ~5 years experience, **Bangal
 ### JSearch Queries (7 Bangalore-targeted)
 - `.NET Developer Bangalore India`
 - `Backend Engineer .NET Bangalore India`
-- `Full Stack Engineer React .NET Bangalore India`
+- `Microservices .NET Backend Engineer Bangalore India`
 - `SDE 2 .NET Bangalore India`
 - `Senior Software Engineer .NET Bangalore India`
-- `C# Developer Bangalore India`
+- `Azure .NET Developer Bangalore India`
 - `Software Engineer II .NET Bangalore India`
 
 ### Naukri Queries (2 via Apify)

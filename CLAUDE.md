@@ -124,13 +124,13 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 ### Job Search Automation
 - **Status**: Inactive (manual trigger)
 - **n8n Workflow ID**: `8vs888j57KeLaGtH`
-- **Nodes**: 27 | **Connections**: 26
+- **Nodes**: 28 | **Connections**: 27
 - **Estimated Runtime**: ~21 minutes per run (confirmed execution #70: Naukri ~5 min parallel + ~10 min scoring 211 jobs + ~3.5 min cover letters)
 - **Export File**: `exports/job-search-automation.json`
 - **Documentation**: See `docs/workflow-reference.md` for full node-by-node breakdown
 - **Setup Guide**: See `docs/setup-guide.md` for credential configuration
 
-**Pipeline**: Read Resume PDF -> Extract PDF Text -> Set Job Preferences (7 JSearch queries) -> [Branch A] Search Jobs x7 (JSearch, 4 pages each) + [Branch B] Set Naukri Queries -> Search Naukri .NET x1 (Apify, 30 jobs) + [Branch C] Set Naukri Queries (C#) -> Search Naukri C# x1 (Apify, 30 jobs) -> Merge Search Results (3 inputs) -> Parse & deduplicate results (~210 unique) -> Aggregate Jobs (collapse N→1) -> [Read Existing Jobs (Sheets) + Sync Dedup Inputs (Merge)] -> Filter New Jobs Only (cross-run dedup) -> Prepare Score Request (Code) -> Score OpenAI API (HTTP) -> Parse AI Score -> Filter top matches (score >= 75) -> Prepare Cover Letter (Code) -> Cover Letter OpenAI API (HTTP) -> Attach Cover Letter -> Save to Google Sheets (appendOrUpdate, dedup by Job Title+Company+Apply Link) -> Build Email Digest -> Send Gmail digest email
+**Pipeline**: Read Resume PDF -> Extract PDF Text -> Set Job Preferences (7 JSearch queries) -> [Branch A] Search Jobs x7 (JSearch, 4 pages each) + [Branch B] Set Naukri Queries -> Search Naukri .NET x1 (Apify, 30 jobs) + [Branch C] Set Naukri Queries (C#) -> Search Naukri C# x1 (Apify, 30 jobs) -> Merge Search Results (3 inputs) -> Parse & deduplicate results (~210 unique) -> Aggregate Jobs (collapse N→1) -> [Read Existing Jobs (Sheets) + Sync Dedup Inputs (Merge)] -> Filter New Jobs Only (cross-run dedup) -> **Filter Stack & Quality** (pre-score: blocks Java/Node.js/Python/frontend-only/stub jobs) -> Prepare Score Request (Code) -> Score OpenAI API (HTTP) -> Parse AI Score -> Filter top matches (score >= 75) -> Prepare Cover Letter (Code) -> Cover Letter OpenAI API (HTTP) -> Attach Cover Letter -> Save to Google Sheets (appendOrUpdate, dedup by Job Title+Company+Apply Link) -> Build Email Digest -> Send Gmail digest email
 
 **Required Credentials** (configure in n8n before running):
 1. **RapidAPI / JSearch** - `rapidApiKey` in Set Job Preferences. JSearch Basic is **free** (200 req/month, we use 24). Sign up at rapidapi.com, subscribe to JSearch free plan. Gets jobs from LinkedIn + Indeed + Glassdoor + Google Jobs.
@@ -140,7 +140,7 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 
 **Monthly Cost**: ~$0.30/month (4 runs/month) -- JSearch free + Apify $0 (within $5/month credit) + OpenAI ~$0.30 + Google APIs free
 
-### Complete Node List (27 nodes)
+### Complete Node List (28 nodes)
 
 | # | Node Name | Type | Version | ID | Purpose |
 |---|---|---|---|---|---|
@@ -160,19 +160,20 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 | 14 | Read Existing Jobs | `n8n-nodes-base.googleSheets` | v4.5 | `readExistingJobs` | Reads all rows from Job Tracker sheet to get previously seen apply links |
 | 15 | Sync Dedup Inputs | `n8n-nodes-base.merge` | v3 | `syncDedup` | Merge (append): input 0 = Aggregate Jobs (always 1 item), input 1 = Read Existing Jobs (0+ rows). Guarantees Filter New Jobs runs even on empty sheet |
 | 16 | Filter New Jobs Only | `n8n-nodes-base.code` | v2 | `filterNewJobs` | Cross-run dedup: separates jobs vs sheet rows by shape, filters already-seen apply links |
-| 17 | Prepare Score Request | `n8n-nodes-base.code` | v2 | `scoreMatch` | Builds aiPayload JSON string per job with full resume, passes openAiApiKey inline |
-| 18 | Score OpenAI API | `n8n-nodes-base.httpRequest` | v4.2 | `scoreGroqApi` | POST api.openai.com/v1/chat/completions. Auth: Bearer header. batchSize=1, batchInterval=3000ms. retryOnFail: false |
-| 19 | Parse AI Score | `n8n-nodes-base.code` | v2 | `parseScore` | runOnceForEachItem. Reads OpenAI response + job data from $('Prepare Score Request').item |
-| 20 | Filter Top Matches | `n8n-nodes-base.code` | v2 | `filterMatches` | Filters score >= minScore (75). Throws if no matches |
-| 21 | Prepare Cover Letter | `n8n-nodes-base.code` | v2 | `generateCoverLetter` | Builds cover letter aiPayload per job with full resume |
-| 22 | Cover Letter OpenAI API | `n8n-nodes-base.httpRequest` | v4.2 | `coverLetterGroqApi` | POST api.openai.com/v1/chat/completions. batchSize=1, batchInterval=3000ms. retryOnFail: false |
-| 23 | Attach Cover Letter | `n8n-nodes-base.code` | v2 | `addCoverLetter` | runOnceForEachItem. Reads cover letter from $input.item + job from $('Prepare Cover Letter').item |
-| 24 | Save to Google Sheets | `n8n-nodes-base.googleSheets` | v4.5 | `saveToSheet` | appendOrUpdate matching on Job Title+Company+Apply Link. Status column excluded (preserves user edits) |
-| 25 | Build Email Digest | `n8n-nodes-base.code` | v2 | `buildEmail` | HTML email, maps both Google Sheets column names and camelCase field names |
-| 26 | Send Gmail Digest | `n8n-nodes-base.gmail` | v2.1 | `sendDigest` | Send HTML digest |
-| 27 | Success Summary | `n8n-nodes-base.code` | v2 | `successOutput` | Return matchCount, topScore, emailSent, timestamp |
+| 17 | Filter Stack & Quality | `n8n-nodes-base.code` | v2 | `filterStackQuality` | Pre-score filter (7 checks in order): (1) stack blacklist — Java/Node.js/Python/Ruby/Go/PHP/Android/iOS/Flutter/React Native/Data Science/Salesforce/SAP primary roles (.NET/C# in title overrides); (2) too junior — Fresher/Intern/Junior/Trainee/0-2yr titles; (3) too senior — Principal/Staff/VP/CTO/Director; (4) 8+ yr minimum experience in description ("8+ years", "minimum 8 years", "at least 8 years" — ranges like "3-8 years" pass); (5) Bangalore guard — location mentions another Indian city (Mumbai/Hyderabad/Chennai/Pune/Delhi/NCR) without Bangalore/Bengaluru; (6) stub — description <150 chars; (7) company cap — max 3 roles per company per run, keeps highest seniority titles. |
+| 18 | Prepare Score Request | `n8n-nodes-base.code` | v2 | `scoreMatch` | Builds aiPayload JSON string per job with full resume. System prompt uses 4-step arithmetic scoring: base (82-88/70-81/50-69/0-49) → +8 boosts (Fintech/Healthcare/Azure/Kafka/microservices, max +16) → -15 penalties (frontend-primary/>7yr/<2yr/no .NET) → clamp 0-100. Calibration examples ensure 90+ scores are generated. |
+| 19 | Score OpenAI API | `n8n-nodes-base.httpRequest` | v4.2 | `scoreGroqApi` | POST api.openai.com/v1/chat/completions. Auth: Bearer header. batchSize=1, batchInterval=3000ms. retryOnFail: false |
+| 20 | Parse AI Score | `n8n-nodes-base.code` | v2 | `parseScore` | runOnceForEachItem. Reads OpenAI response + job data from $('Prepare Score Request').item |
+| 21 | Filter Top Matches | `n8n-nodes-base.code` | v2 | `filterMatches` | Filters score >= minScore (75). Throws if no matches |
+| 22 | Prepare Cover Letter | `n8n-nodes-base.code` | v2 | `generateCoverLetter` | Builds cover letter aiPayload per job with full resume |
+| 23 | Cover Letter OpenAI API | `n8n-nodes-base.httpRequest` | v4.2 | `coverLetterGroqApi` | POST api.openai.com/v1/chat/completions. batchSize=1, batchInterval=3000ms. retryOnFail: false |
+| 24 | Attach Cover Letter | `n8n-nodes-base.code` | v2 | `addCoverLetter` | runOnceForEachItem. Reads cover letter from $input.item + job from $('Prepare Cover Letter').item |
+| 25 | Save to Google Sheets | `n8n-nodes-base.googleSheets` | v4.5 | `saveToSheet` | appendOrUpdate matching on Job Title+Company+Apply Link. Status column excluded (preserves user edits) |
+| 26 | Build Email Digest | `n8n-nodes-base.code` | v2 | `buildEmail` | HTML email, maps both Google Sheets column names and camelCase field names. keyMatchingSkills pulled from $('Attach Cover Letter').all() and shown as green tags |
+| 27 | Send Gmail Digest | `n8n-nodes-base.gmail` | v2.1 | `sendDigest` | Send HTML digest |
+| 28 | Success Summary | `n8n-nodes-base.code` | v2 | `successOutput` | Return matchCount, topScore, emailSent, timestamp |
 
-### Connection Map (26 connections)
+### Connection Map (27 connections)
 
 ```
 Manual Trigger                -> Read Resume PDF               (main)
@@ -193,7 +194,8 @@ Aggregate Jobs                -> Sync Dedup Inputs             (main, input 0)
 Aggregate Jobs                -> Read Existing Jobs            (main)
 Read Existing Jobs            -> Sync Dedup Inputs             (main, input 1)
 Sync Dedup Inputs             -> Filter New Jobs Only          (main)
-Filter New Jobs Only          -> Prepare Score Request         (main)
+Filter New Jobs Only          -> Filter Stack & Quality        (main)
+Filter Stack & Quality        -> Prepare Score Request         (main)
 Prepare Score Request         -> Score OpenAI API              (main)
 Score OpenAI API              -> Parse AI Score                (main)
 Parse AI Score                -> Filter Top Matches            (main)
@@ -224,8 +226,8 @@ Send Gmail Digest             -> Success Summary               (main)
 - Validates resume is not empty or too short (< 50 chars)
 - Returns **7 items** for Bangalore-only targeted searches (location embedded in query string for JSearch):
   - `.NET Developer Bangalore India`, `Backend Engineer .NET Bangalore India`
-  - `Full Stack Engineer React .NET Bangalore India`, `SDE 2 .NET Bangalore India`
-  - `Senior Software Engineer .NET Bangalore India`, `C# Developer Bangalore India`
+  - `Microservices .NET Backend Engineer Bangalore India`, `SDE 2 .NET Bangalore India`
+  - `Senior Software Engineer .NET Bangalore India`, `Azure .NET Developer Bangalore India`
   - `Software Engineer II .NET Bangalore India`
 - `minScore`: 75
 - API keys `openAiApiKey` (OpenAI), `rapidApiKey` (RapidAPI/JSearch), `apifyToken` (Apify/Naukri) stored here
@@ -311,7 +313,8 @@ Send Gmail Digest             -> Success Summary               (main)
 - Runs `$input.all().map()` to build one payload item per job
 - Builds `aiPayload` = `JSON.stringify({model: 'gpt-4o-mini', messages, temperature: 0.1, response_format: {type: 'json_object'}})`
 - Sends **full resume** (no substring limit)
-- System message: plain field list — **do NOT include embedded JSON example** (causes `json_schema_invalid` error)
+- System message uses **4-step explicit arithmetic**: Step 1 assign BASE (82-88 strong, 70-81 good, 50-69 partial, 0-49 no match) → Step 2 ADD +8 per boost (Fintech/Healthcare/Azure/Kafka/microservices, max +16) → Step 3 SUBTRACT -15 per penalty (frontend-primary, <2yr, >7yr, no .NET) → Step 4 clamp 0-100. Includes 6 calibration examples with exact numbers (e.g. "base 83 + Azure +8 = 91") so model understands 90+ is achievable. **do NOT include embedded JSON example** (causes `json_schema_invalid` error).
+- `matchReason` field required to state which boosts/penalties were applied
 - User message: `"RESUME:\n" + resume + "\n\nJOB POSTING:\n" + jobDesc`
 - Passes `openAiApiKey` inline on each item
 
@@ -485,6 +488,11 @@ Runs weekday mornings at 9 AM. Use cron `0 9 * * 1-5` for weekdays only.
 
 ## Version History
 
+- **v9.4** (2026-03-16): Fixed scoring ceiling at 85. Root cause: LLMs anchor "good match" in the 75-85 range when given a 0-100 scale with no arithmetic guidance — the model reads "BOOST by 8" and moves the score "a bit higher" rather than calculating literally. Fix: rewrote `scoreMatch` system prompt to use 4 explicit arithmetic steps (assign base → add boosts → subtract penalties → clamp), lowered base rubric top band to 82-88 (so boosts push above 85 instead of just reaching it), and added 6 calibration examples showing the model that 90-100 scores are achievable and expected (e.g. "Fintech .NET + microservices → 86+8+8 = 102 → capped 100"). matchReason now required to state which boosts/penalties were applied.
+- **v9.3** (2026-03-16): Two additions to `filterStackQuality`. (1) Bangalore location guard: jobs whose location field mentions another Indian city (Mumbai, Hyderabad, Chennai, Pune, Delhi, Gurugram/Gurgaon, Noida, Kolkata, Ahmedabad, Jaipur, Indore, Coimbatore) without mentioning Bangalore/Bengaluru are filtered out. Jobs with blank location or "Remote" pass through. (2) Company cap: max 3 roles per company per run — if a company has 4+ listings, the top 3 by title seniority are kept (Senior > SDE 2/SE II > others), extras dropped. Company name normalized by stripping India/Pvt/Ltd/Technologies/Solutions suffixes before comparison. Log line now reports off-location count and company cap drops.
+- **v9.2** (2026-03-16): Added experience range filtering for candidate's 4-6 year target. (1) `filterStackQuality`: new pre-score hard block for jobs explicitly requiring 8+ years minimum — matches "8+ years of experience", "minimum 8 years experience", "at least 8 years" in description (safe: "3-8 years" ranges are NOT blocked since they start with 3). (2) Tightened `scoreMatch` scoring rubric: 85-100 band changed from "3-7 years" → "3-6 years"; 70-84 band from "3-8 years" → "3-7 years"; PENALIZE threshold changed from ">10 years" → ">7 years". Roles requiring 8+ years now score 15 points lower and get pre-filtered before reaching OpenAI at all.
+- **v9.1** (2026-03-16): Added pre-score "Filter Stack & Quality" node (id: `filterStackQuality`) between Filter New Jobs Only and Prepare Score Request. Blocks Java/Node.js/Python/Ruby/Go/PHP/Android/iOS/Flutter/React Native/Data Science/Salesforce/SAP-primary roles by title pattern before they reach OpenAI — saves scoring tokens and eliminates irrelevant noise. .NET/C# anywhere in title overrides the blacklist (e.g. "Java/.NET Developer" is kept). Also blocks: Fresher/Trainee/Intern/Junior-only titles, Principal/VP/Director/CTO seniority, stub descriptions (<150 chars). Updated Build Email Digest to pull `keyMatchingSkills` from `$('Attach Cover Letter').all()` (not persisted to Google Sheets) and display as green tags in email. Node count: 28.
+- **v9.0** (2026-03-16): Improved job quality targeting for Garima's specific profile. (1) Replaced 2 weak JSearch queries: `Full Stack Engineer React .NET` → `Microservices .NET Backend Engineer` (targets architecture depth); `C# Developer` → `Azure .NET Developer` (targets Azure DevOps background). (2) Rewrote scoring system prompt with full candidate profile (stack, domains, seniority), explicit scoring rubric (85-100/70-84/50-69/0-49 bands), domain boost (+8 for Fintech/BFSI/Healthcare/Azure/Kafka/microservices), and frontend penalty (-15). (3) Tuned cover letter prompt with Garima's actual quantified achievements (60% latency, 85% test coverage, 15% build time). Also restored minScore: 60 → 75 (was incorrectly 60 in live workflow despite v8.3 change). Expected quality improvement: 6/10 → 9/10.
 - **v8.3** (2026-03-09): Raised minScore 60 → 75. Execution #70 produced 71 jobs (all scored 75-85); minScore 60 was passing everything and generating excessive cover letters. At 75 threshold, expect ~30-50 final jobs/run going forward.
 - **v8.2** (2026-03-09): Fixed pipeline stopping when sheet is empty. Root cause: `readExistingJobs` outputs 0 rows on first run → n8n skips `filterNewJobs` → nothing scored/emailed. Fix: added `Sync Dedup Inputs` Merge node receiving Aggregate Jobs (input 0, always 1 item) + Read Existing Jobs (input 1, 0+ rows) — Merge always fires even with empty sheet. Updated `filterNewJobs` to separate jobs vs sheet rows by shape. Fixed `parseJobs` Naukri apply link: `apply_link` (snake_case) was not being captured. Node count: 27.
 - **v8.1** (2026-03-09): Fixed Google Sheets rate limit on Read Existing Jobs. Root cause: node ran once per job item (~180 calls). Fix: added Aggregate Jobs Code node between Filter Duplicates and Read Existing Jobs — collapses N items into 1, so Sheets is called exactly once. Updated Filter New Jobs Only to reference `$('Aggregate Jobs').first().json.jobs`. Node count: 26.

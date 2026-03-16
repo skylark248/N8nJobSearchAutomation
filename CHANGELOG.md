@@ -4,6 +4,86 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.4] — 2026-03-16
+
+### Fixed
+- Scoring ceiling stuck at 85 across all runs
+
+### Root Cause
+GPT-4o-mini (and LLMs generally) anchor "good match" in the middle of any scale when given no arithmetic guidance. With a 0-100 range and vague "BOOST by 8" instructions, the model interprets "good match" as 75-85 and shifts scores "a bit higher" rather than doing literal arithmetic. The previous rubric also had the 85-100 band start at 85, meaning boosts were supposed to push scores *within* that band rather than above it — a job starting at 78 with two boosts would land at 78+16=94 in theory, but the model instead classified it as "good match, 80" and stopped.
+
+### Fix
+Rewrote `scoreMatch` system prompt with:
+1. **4 explicit arithmetic steps**: "Step 1: assign BASE from rubric. Step 2: ADD 8 per boost (max +16). Step 3: SUBTRACT 15 per penalty. Step 4: Clamp to 0-100."
+2. **Lowered base rubric top band to 82-88** (was 85-100) — so two boosts on an 84-base job → 84+16=100, and one boost on an 82-base job → 82+8=90. Scores above 88 are now achievable without exotic matches.
+3. **6 calibration examples** showing exact arithmetic: "Fintech .NET + microservices → base 86 + Fintech +8 + microservices +8 = 102 → capped at 100", "Azure DevOps required → base 83 + 8 = 91", etc.
+4. `matchReason` field now required to state which boosts/penalties were applied — forces the model to show its working.
+
+### Expected Score Distribution (next run)
+- Fintech/Healthcare .NET + microservices/Azure/Kafka → 90-100
+- Strong .NET backend + one domain/tech boost → 88-93
+- Good .NET backend, no boost → 75-82
+- Partial/penalised matches → below 75 (filtered by minScore)
+
+---
+
+## [v9.3] — 2026-03-16
+
+### Added
+- **Bangalore location guard** in `filterStackQuality`: removes jobs whose location field mentions another Indian city (Mumbai, Hyderabad, Chennai, Pune, Delhi, Gurugram/Gurgaon, Noida, Kolkata, Ahmedabad, Jaipur, Indore, Coimbatore) without mentioning Bangalore or Bengaluru. Jobs with blank location or "Remote" pass through unchanged.
+- **Company cap** in `filterStackQuality`: limits results to 3 roles per company per run. When a company has more than 3 listings, keeps the highest-seniority titles (Senior > SDE 2/SE II > other) and drops the rest. Company name is normalised by stripping common suffixes (India, Pvt, Ltd, Technologies, Solutions) before comparison.
+
+### Why
+Prevents Wipro/TCS/Infosys-style bulk listings from dominating the email, and removes the occasional non-Bangalore result that JSearch returns despite "Bangalore India" being embedded in every query.
+
+---
+
+## [v9.2] — 2026-03-16
+
+### Changed
+- **Experience range filter** added to `filterStackQuality`: hard-blocks jobs whose description contains "8+ years", "minimum 8 years", or "at least 8 years required". Ranges like "3-8 years" are not blocked (candidate falls within range). Target range: 4-6 years.
+- **Scoring rubric tightened** in `scoreMatch` system prompt:
+  - 85-100 band: changed "3-7 years required" → "3-6 years required"
+  - 70-84 band: changed "3-8 years required" → "3-7 years required"
+  - PENALIZE threshold: changed ">10 years required" → ">7 years required" (-15 points)
+
+### Why
+Candidate has ~5 years experience, targeting 4-6 year roles. Jobs requiring 8+ years as a minimum were previously passing through to OpenAI scoring and getting -15 points at most — still potentially reaching the inbox. Now they're blocked before scoring entirely. Jobs requiring 7 years get -15 in scoring and are unlikely to clear minScore 75.
+
+---
+
+## [v9.1] — 2026-03-16
+
+### Added
+- **Filter Stack & Quality** node (id: `filterStackQuality`, Code v2) inserted between `Filter New Jobs Only` and `Prepare Score Request`. Pre-score filter that blocks irrelevant jobs before OpenAI is called, reducing token cost and improving result quality.
+- Filters: Java/Node.js/Python/Ruby/Go/PHP/Android/iOS/Flutter/React Native/Data Science/Salesforce/SAP primary roles; Fresher/Intern/Junior/Trainee titles; Principal/Staff/VP/CTO/Director seniority; stub descriptions < 150 chars. `.NET`/`C#` anywhere in title overrides stack blacklist.
+- **Build Email Digest** updated: `keyMatchingSkills` pulled from `$('Attach Cover Letter').all()` (not available from Google Sheets output) and displayed as green tags (up to 5) in each job row.
+- **Canvas layout fix**: all nodes from `filterStackQuality` onward repositioned to 250px spacing — was 120px causing overlap.
+
+### Node Count
+27 → 28 nodes, 26 → 27 connections
+
+---
+
+## [v9.0] — 2026-03-16
+
+### Changed
+- **JSearch queries** (2 replacements targeting Garima's specific profile):
+  - `Full Stack Engineer React .NET Bangalore India` → `Microservices .NET Backend Engineer Bangalore India` (targets architecture depth)
+  - `C# Developer Bangalore India` → `Azure .NET Developer Bangalore India` (targets Azure DevOps background)
+- **Scoring system prompt** (`scoreMatch`) fully rewritten with candidate-specific rubric:
+  - Candidate profile: C#/.NET Core, Kafka/RabbitMQ/Redis, Azure DevOps CI/CD, microservices, Fintech+Healthcare domains
+  - Scoring bands: 85-100 (strong .NET, 3-7yr, microservices/domain), 70-84 (good .NET, 3-8yr), 50-69 (partial), 0-49 (no .NET)
+  - Domain boost: +8 points for Fintech/BFSI/Healthcare/Azure/Kafka/microservices (stackable, max +16)
+  - Penalty: -15 for frontend-primary, <2yr required, >10yr required, no .NET mention
+- **Cover letter system prompt** (`generateCoverLetter`) updated with candidate name and quantified achievements (60% latency via Redis, 85% test coverage via TDD, 15% build time via .NET 6-to-8 migration)
+- **minScore** corrected: live workflow had drifted to 60 despite v8.3 raising it to 75. Restored to 75.
+
+### Why
+Previous scoring was fully generic — no rubric, no domain awareness, no stack-specific rules. Previous queries included "Full Stack React .NET" (pulls frontend-heavy roles) and "C# Developer" (attracts junior/contractor roles). Both were the weakest queries by relevance. Expected quality improvement: 6/10 → 9/10.
+
+---
+
 ## [v8.3] — 2026-03-09
 
 ### Changed
@@ -25,7 +105,7 @@ Execution #70 (first successful end-to-end run) produced 71 final matches, all s
 - Pipeline silently stopping on first run when Google Sheet is empty
 
 ### Root Cause
-When `Read Existing Jobs` returns 0 rows (empty sheet), n8n skips all downstream nodes entirely — `Filter New Jobs Only` never ran, nothing got scored, no email sent. The workflow would show "success" in n8n but only 14/27 nodes had actually executed.
+When `Read Existing Jobs` returns 0 rows (empty sheet), n8n skips all downstream nodes entirely — `Filter New Jobs Only` never ran, nothing got scored, no email sent. The workflow would show "success" in n8n but only 14 nodes had actually executed.
 
 ### Solution
 Added `Sync Dedup Inputs` Merge node (mode: append) that receives:
