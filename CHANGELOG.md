@@ -4,6 +4,35 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.5] — 2026-03-17
+
+### Fixed
+- Naukri (Apify) jobs silently dropped in Parse Job Results — only JSearch results were being scored and emailed
+
+### Root Cause
+The `parseJobs` Code node had two format checks:
+1. `item.json.data && Array.isArray(item.json.data)` → catches JSearch (single response with `data[]` array) ✓
+2. `Array.isArray(item.json)` → intended to catch Apify Naukri responses, but **never matched**
+
+The assumption was that the Apify HTTP Request node would return the entire JSON array as a single item (`item.json = [job1, job2, ...]`). In practice, n8n HTTP Request v4.2 **unpacks** JSON array responses into individual items — each Naukri job becomes a separate item with `item.json = { title, company, apply_link, ... }` (a plain object, not an array). So `Array.isArray(item.json)` always returned false, and 20-40 Naukri jobs per run were silently skipped.
+
+Execution #80 confirmed: Search Naukri (Apify) output 20 items, Search Naukri C# output 40 items, but zero naukri.com URLs appeared in Parse Job Results output.
+
+### Fix
+Added a third case to `parseJobs`:
+```javascript
+} else if (item.json.title || item.json.jobTitle || item.json.positionName || item.json.companyName) {
+  // Individual Naukri/Apify job object — n8n HTTP Request unpacks JSON arrays into individual items
+  allJobs.push(parseNaukriJob(item.json));
+}
+```
+Also extracted a `parseNaukriJob(job)` helper to avoid code duplication between the array and individual-object cases.
+
+### Impact
+Naukri adds ~50-60 additional jobs per run (.NET Developer + C# Developer, 30 each). Previous runs processed only JSearch results (~140 jobs). Expected raw total now back to design spec: ~190-200 unique jobs/run.
+
+---
+
 ## [v9.4] — 2026-03-16
 
 ### Fixed
