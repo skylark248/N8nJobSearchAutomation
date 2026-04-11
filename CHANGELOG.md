@@ -434,9 +434,16 @@ Manual Trigger
 | v8.0 | 2026-03-09 | 25 | JSearch + Naukri .NET + C# | ~210 | ~30-60* | ~$0.30 |
 | v8.1 | 2026-03-09 | 26 | JSearch + Naukri .NET + C# | ~210 | ~30-60* | ~$0.30 |
 | v8.2 | 2026-03-09 | 27 | JSearch + Naukri .NET + C# | ~210 | ~30-60* | ~$0.30 |
-| **v8.3** | **2026-03-09** | **27** | **JSearch + Naukri .NET + C#** | **~210** | **~30-50** | **~$0.30** |
+| v8.3 | 2026-03-09 | 27 | JSearch + Naukri .NET + C# | ~210 | ~30-50 | ~$0.30 |
+| v9.0 | 2026-03-16 | 28 | JSearch (profile-targeted) + Naukri .NET + C# | ~210 | ~25-45 | ~$0.30 |
+| v9.1 | 2026-03-16 | 28 | same + pre-score stack/seniority filter | ~150** | ~20-35** | ~$0.30 |
+| v9.2 | 2026-03-16 | 28 | same + 8+ yr exp filter | ~130** | ~18-32** | ~$0.30 |
+| v9.3 | 2026-03-16 | 28 | same + location guard + company cap | ~110** | ~15-28** | ~$0.30 |
+| v9.4 | 2026-03-16 | 28 | same | ~110** | ~15-28 (90+ scores now possible) | ~$0.30 |
+| **v9.5** | **2026-03-17** | **28** | **All 3 sources confirmed working** | **~210** | **~25-45** | **~$0.30** |
 
 *After cross-run dedup — first run always passes all ~210 jobs to scoring.
+**Pre-score filter blocks irrelevant stacks, overexperienced, off-location before OpenAI — reduces token usage and noise.
 
 ### Key Milestones
 
@@ -451,3 +458,7 @@ Manual Trigger
 | Rate limit fix (Aggregate Jobs) | v8.1 | Sheets API called once not 200 times |
 | Empty sheet fix (Sync Dedup) | v8.2 | First run now works reliably |
 | Proven run: 211 → 71 matches | v8.3 | Validated end-to-end, minScore tuned |
+| Profile-targeted queries + candidate scoring | v9.0 | Quality: 6/10 → 9/10 (rubric, domain boosts, penalties) |
+| Pre-score filter (stack/exp/location/company) | v9.1–v9.3 | Token savings + eliminates Java/overexperienced/off-city noise |
+| Score ceiling fix (was stuck at 85 → now 90-100) | v9.4 | Best-fit roles now correctly score 90-100 |
+| Naukri parse fix (60 jobs recovered/run) | v9.5 | All 3 job sources confirmed working end-to-end |

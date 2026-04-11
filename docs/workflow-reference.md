@@ -3,7 +3,7 @@
 ## Overview
 
 - **Trigger**: Manual (click to run) — replace with Schedule Trigger for weekly automation
-- **Nodes**: 27 | **Connections**: 26
+- **Nodes**: 28 | **Connections**: 27
 - **Estimated Runtime**: ~21 minutes per run
   - Naukri Apify actors: ~5 min (2 parallel calls)
   - AI scoring ~200 jobs at 3s/job: ~10 min
@@ -156,14 +156,16 @@ Software Engineer II .NET Bangalore India
 
 ### Node 11: Parse Job Results
 - **ID**: `parseJobs` | **Type**: `n8n-nodes-base.code` v2
-- Handles two response formats in the same loop:
-  - **JSearch**: `item.json.data[]` array → fields: `employer_name`, `job_title`, `job_city`, `job_state`, `job_apply_link`, `job_publisher`
-  - **Naukri/Apify**: `Array.isArray(item.json)` → fields: `companyName`, `jobTitle`, `location`, `apply_link` (snake_case!)
+- Handles **three** response formats in the same loop (v9.5 fix):
+  1. **JSearch** (`item.json.data && Array.isArray(item.json.data)`): single response with `data[]` array → fields: `employer_name`, `job_title`, `job_city`, `job_state`, `job_apply_link`, `job_publisher`
+  2. **Naukri individual object** (`item.json.title || item.json.jobTitle || item.json.positionName || item.json.companyName`): n8n HTTP Request v4.2 **unpacks** JSON array responses into individual items — each Naukri job arrives as a plain object. Uses `parseNaukriJob()` helper. Fields: `title`, `company`, `location`, `apply_link` (snake_case), `posted`, `salary`, `skills`, `experience`.
+  3. **Apify array fallback** (`Array.isArray(item.json)`): handles the rare case where Apify returns a single item containing an array (uncommon in practice).
 - `hashJob()`: normalized URL (strips query params via `new URL(url).hostname + pathname`) as jobId; falls back to `company|title` if no URL
 - Truncates description to 3000 chars
 - Returns `{ jobs: [...allJobs], totalFound: N }` as single item
 
-> **Naukri field name gotcha**: The actor uses `apply_link` (snake_case), not `jobUrl`, `url`, or `applyLink`. Parsing checks `job.apply_link` first.
+> **Critical (v9.5)**: `Array.isArray(item.json)` alone is NOT sufficient for Naukri — n8n HTTP Request v4.2 unpacks JSON array responses into individual items, so each Naukri job arrives as a plain object (not an array). The individual-object check must come before the array fallback.
+> **Naukri field name**: The actor uses `apply_link` (snake_case), not `jobUrl`, `url`, or `applyLink`. Parsing checks `job.apply_link` first.
 
 ### Node 12: Filter Duplicates
 - **ID**: `filterDuplicates` | **Type**: `n8n-nodes-base.code` v2
@@ -411,6 +413,9 @@ When Read Existing Jobs returns 0 rows, n8n skips all downstream nodes (no data 
 ### Build Email Digest: Column Name Keys
 After `Save to Google Sheets`, node output uses column headers as object keys: `j['Match Score']` not `j.score`. Always use `j['Match Score'] || j.score` for robustness.
 
+### Naukri Jobs Silently Dropped (Fixed v9.5)
+n8n HTTP Request v4.2 **unpacks** JSON array responses into individual items — so each Naukri job arrives as a separate plain object (`{ title, company, apply_link, ... }`), not as a single array item. `Array.isArray(item.json)` always returns false for these. The fix is a third format case checking `item.json.title || item.json.jobTitle || item.json.positionName || item.json.companyName` before the array fallback.
+
 ### Naukri Apply Link Field Name
 The `nuclear_quietude~naukri-job-scraper` actor uses `apply_link` (snake_case). The Parse Job Results node checks `job.apply_link` first before other fallbacks.
 
@@ -444,6 +449,12 @@ Monday mornings are optimal — many companies post over the weekend.
 
 ## Version History
 
+- **v9.5** (2026-03-17): Fixed Naukri jobs silently dropped in Parse Job Results. Root cause: n8n HTTP Request v4.2 unpacks JSON array responses into individual items — each Naukri job arrives as `{ title, company, apply_link, ... }` (plain object), so `Array.isArray(item.json)` always returned false → all 20-40 Naukri jobs per search were skipped. Fix: added third format case checking `item.json.title || item.json.jobTitle || ...` for individual Naukri objects. Extracted `parseNaukriJob()` helper. Impact: ~50-60 more jobs per run; total raw restored to design spec ~190-200 unique/run. Node count: 28 (unchanged).
+- **v9.4** (2026-03-16): Fixed score ceiling stuck at 85. GPT-4o-mini anchors "good match" at 75-85 without explicit arithmetic. Fix: rewrote scoreMatch prompt with 4-step arithmetic (base → +8 boosts → -15 penalties → clamp), base rubric top band lowered to 82-88 (so boosts push above 85), and 6 calibration examples showing 90-100 is expected. matchReason now required to state applied boosts/penalties.
+- **v9.3** (2026-03-16): Added Bangalore location guard and company cap to filterStackQuality. Location guard removes jobs mentioning another Indian city without Bangalore/Bengaluru. Company cap: max 3 roles per company per run (keeps highest seniority). Company name normalized by stripping India/Pvt/Ltd/Technologies/Solutions suffixes.
+- **v9.2** (2026-03-16): Added 8+ year experience filter to filterStackQuality (hard-blocks "8+ years", "minimum 8 years", "at least 8 years" — ranges like "3-8 years" pass). Tightened scoring rubric: >7yr penalized (was >10yr), top band now 3-6yr (was 3-7yr).
+- **v9.1** (2026-03-16): Added Filter Stack & Quality node (id: `filterStackQuality`) between Filter New Jobs Only and Prepare Score Request. 7 checks: stack blacklist (Java/Node.js/Python/etc.), too junior, too senior, 8+ yr exp, Bangalore guard, stub <150 chars, company cap ≤3. Updated Build Email Digest with keyMatchingSkills green tags. Canvas layout fixed (250px spacing). Node count: 27 → 28.
+- **v9.0** (2026-03-16): Replaced 2 JSearch queries with profile-targeted ones (Microservices .NET + Azure .NET). Rewrote scoring system prompt with 4-step rubric, domain boosts (+8), and penalties (-15). Updated cover letter with quantified achievements. Restored minScore to 75.
 - **v8.3** (2026-03-09): Raised minScore 60 → 75. Execution #70 showed all 71 matches scored 75-85; minScore 60 was generating excessive cover letters without benefit.
 - **v8.2** (2026-03-09): Fixed pipeline stopping when Google Sheet is empty. Added Sync Dedup Inputs Merge node — receives Aggregate Jobs (always 1 item, input 0) + Read Existing Jobs (0+ rows, input 1). Merge fires regardless of row count. Updated Filter New Jobs to separate jobs vs sheet rows by data shape. Fixed Naukri `apply_link` snake_case parsing in parseJobs. Node count: 27.
 - **v8.1** (2026-03-09): Fixed Google Sheets 429 rate limit on Read Existing Jobs. Added Aggregate Jobs Code node (collapses N job items → 1) before Read Existing Jobs. Node count: 26.

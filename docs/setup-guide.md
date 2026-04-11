@@ -126,8 +126,10 @@ openAiApiKey: 'sk-proj-YOUR_KEY_HERE'
 
 ### Free Credit & Cost
 - **$5/month** recurring free credit (auto-credited each month)
-- Actor costs ~$0.005-0.01/run (2 searches × ~$0.003-0.005 each)
-- At ~4 runs/month, total Apify cost is ~$0.04/month — well within free credit
+- Actor now uses **pay-per-event** pricing: $0.01/start + $6.00/1,000 results
+- Per run: 2 starts ($0.02) + ~60 results ($0.36) = **~$0.38/run**
+- At 4 runs/month: ~$1.52/month — well within the $5/month free credit
+- Break-even: ~13 runs/month before exceeding the $5 credit
 - **Do NOT rent the actor** (rented actors = $19.99/month flat fee regardless of usage)
 
 ### Actor Runtime
@@ -377,7 +379,9 @@ Jobs are freshest early Monday morning — many companies post over the weekend.
 ### Apify billing — checking usage
 - Go to [console.apify.com/billing](https://console.apify.com/billing)
 - $5/month free credit auto-renews monthly
-- At ~$0.01/run × 4 runs/month = ~$0.04/month — far within free credit
+- New pay-per-event pricing: $0.01/start + $6.00/1,000 results
+- At ~$0.38/run × 4 runs/month = ~$1.52/month — well within free credit
+- Break-even: ~13 runs/month before exceeding the $5 credit
 
 ---
 

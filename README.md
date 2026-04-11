@@ -2,7 +2,7 @@
 
 Automated pipeline that searches for .NET/React developer jobs in Bangalore, scores each against your resume with GPT-4o-mini, generates tailored cover letters, saves results to Google Sheets, and sends a Gmail digest — fully hands-free.
 
-**Proven results:** 211 unique raw jobs → 71 final matches in first run (score ≥ 75, range 75-85).
+**Proven results:** 211 unique raw jobs → 71 final matches in first run (score ≥ 75). With v9.4 scoring fix, top matches now score 90-100.
 
 ---
 
@@ -202,10 +202,11 @@ All discovered jobs are new. Based on execution #70:
 Cross-run deduplication skips jobs already in the sheet. Expect 20-60 genuinely new jobs per run depending on weekly listing churn.
 
 ### Score Distribution
-GPT-4o-mini tends to score conservatively for this profile:
-- Score 85+: Strong apply — role closely matches .NET/React background
-- Score 75-84: Apply — good match, some gaps
-- Score 60-74: Maybe — filtered out at current threshold
+With the v9.4 explicit arithmetic scoring prompt:
+- Score 90-100: Strong apply — .NET + domain boost (Fintech/Azure/microservices) + strong match
+- Score 82-89: Apply — strong .NET backend, some boosts or no penalties
+- Score 75-81: Apply — good .NET match, minor gaps
+- Score below 75: Filtered out at current minScore threshold
 
 ---
 
@@ -220,7 +221,7 @@ GPT-4o-mini tends to score conservatively for this profile:
 │
 ├── docs/
 │   ├── setup-guide.md        # Step-by-step credential setup
-│   └── workflow-reference.md # Complete 27-node documentation
+│   └── workflow-reference.md # Complete 28-node documentation
 │
 ├── exports/
 │   └── job-search-automation.json  # Importable n8n workflow (no credentials)
@@ -241,11 +242,11 @@ GPT-4o-mini tends to score conservatively for this profile:
 | Service | Per Run | Monthly (4 runs) |
 |---|---|---|
 | JSearch Basic (RapidAPI) | $0.00 | $0.00 (free: 200 req/mo, uses 28) |
-| Apify Naukri scraper (2 searches) | ~$0.01 | ~$0.04 (within $5/mo free credit) |
-| OpenAI GPT-4o-mini scoring (~200 jobs × ~5500 tokens) | ~$0.055 | ~$0.22 |
-| OpenAI GPT-4o-mini cover letters (~40 jobs × ~5500 tokens) | ~$0.011 | ~$0.04 |
+| Apify Naukri scraper (2 searches, pay-per-event) | ~$0.38 | ~$1.52 (within $5/mo free credit) |
+| OpenAI GPT-4o-mini scoring (~150 jobs × ~5500 tokens) | ~$0.041 | ~$0.16 |
+| OpenAI GPT-4o-mini cover letters (~30 jobs × ~5500 tokens) | ~$0.008 | ~$0.03 |
 | Google Sheets + Gmail | $0.00 | $0.00 |
-| **Total** | **~$0.076** | **~$0.30** |
+| **Total** | **~$0.43** | **~$1.73** (within Apify $5/mo credit — net ~$0.19) |
 
 ---
 
