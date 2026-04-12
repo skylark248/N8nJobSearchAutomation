@@ -11,16 +11,6 @@
     },
     {
       "parameters": {
-        "filePath": "/home/node/.n8n-files/keys.json"
-      },
-      "id": "readKeysFile",
-      "name": "Read Keys File",
-      "type": "n8n-nodes-base.readBinaryFile",
-      "typeVersion": 1,
-      "position": [128, 0]
-    },
-    {
-      "parameters": {
         "filePath": "/home/node/.n8n-files/your-resume.pdf"
       },
       "id": "readResumePdf",
@@ -44,7 +34,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// === READ API KEYS FROM keys.json ===\nconst keysBinaryItem = $('Read Keys File').first();\nconst keysBase64 = keysBinaryItem.binary.data.data;\nconst keys = JSON.parse(Buffer.from(keysBase64, 'base64').toString('utf8'));\n\nif (!keys.rapidApiKey || keys.rapidApiKey.startsWith('YOUR_')) {\n  throw new Error('keys.json: rapidApiKey not set. Edit keys.json and restart Docker.');\n}\nif (!keys.openAiApiKey || keys.openAiApiKey.startsWith('YOUR_')) {\n  throw new Error('keys.json: openAiApiKey not set. Edit keys.json and restart Docker.');\n}\nif (!keys.apifyToken || keys.apifyToken.startsWith('YOUR_')) {\n  throw new Error('keys.json: apifyToken not set. Edit keys.json and restart Docker.');\n}\n\n// === READ RESUME FROM PDF ===\nconst rawText = $input.first().json.text;\n\nif (!rawText || rawText.trim().length < 50) {\n  throw new Error('Resume PDF appears empty or too short.');\n}\n\n// Clean up null characters introduced by PDF extraction\nconst resumeText = rawText.replace(/\\u0000/g, '').trim();\n\nconst baseConfig = {\n  minScore: 75,\n  yourEmail: 'YOUR_EMAIL@gmail.com',\n  spreadsheetId: 'YOUR_GOOGLE_SHEET_ID',\n  openAiApiKey: keys.openAiApiKey,\n  rapidApiKey: keys.rapidApiKey,\n  apifyToken: keys.apifyToken,\n  resumeText: resumeText\n};\n\n// 7 targeted JSearch searches: .NET/C#/Azure/Microservices roles, Bangalore only\nreturn [\n  { json: { ...baseConfig, searchQuery: '.NET Developer Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Backend Engineer .NET Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Microservices .NET Backend Engineer Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'SDE 2 .NET Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Senior Software Engineer .NET Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Azure .NET Developer Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Software Engineer II .NET Bangalore India' } },\n];"
+        "jsCode": "// === READ API KEYS FROM keys.json ===\nconst fs = require('fs');\nconst keys = JSON.parse(fs.readFileSync('/home/node/jobsearch-keys.json', 'utf8'));\n\nif (!keys.rapidApiKey || keys.rapidApiKey.startsWith('YOUR_')) {\n  throw new Error('keys.json: rapidApiKey not set. Edit keys.json and restart Docker.');\n}\nif (!keys.openAiApiKey || keys.openAiApiKey.startsWith('YOUR_')) {\n  throw new Error('keys.json: openAiApiKey not set. Edit keys.json and restart Docker.');\n}\nif (!keys.apifyToken || keys.apifyToken.startsWith('YOUR_')) {\n  throw new Error('keys.json: apifyToken not set. Edit keys.json and restart Docker.');\n}\n\n// === READ RESUME FROM PDF ===\nconst rawText = $input.first().json.text;\n\nif (!rawText || rawText.trim().length < 50) {\n  throw new Error('Resume PDF appears empty or too short.');\n}\n\n// Clean up null characters introduced by PDF extraction\nconst resumeText = rawText.replace(/\\u0000/g, '').trim();\n\nconst baseConfig = {\n  minScore: 75,\n  yourEmail: 'YOUR_EMAIL@gmail.com',\n  spreadsheetId: 'YOUR_GOOGLE_SHEET_ID',\n  openAiApiKey: keys.openAiApiKey,\n  rapidApiKey: keys.rapidApiKey,\n  apifyToken: keys.apifyToken,\n  resumeText: resumeText\n};\n\n// 7 targeted JSearch searches: .NET/C#/Azure/Microservices roles, Bangalore only\nreturn [\n  { json: { ...baseConfig, searchQuery: '.NET Developer Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Backend Engineer .NET Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Microservices .NET Backend Engineer Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'SDE 2 .NET Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Senior Software Engineer .NET Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Azure .NET Developer Bangalore India' } },\n  { json: { ...baseConfig, searchQuery: 'Software Engineer II .NET Bangalore India' } },\n];"
       },
       "id": "setPreferences",
       "name": "Set Job Preferences",
@@ -456,8 +446,7 @@
     }
   ],
   "connections": {
-    "Manual Trigger": { "main": [[{ "node": "Read Keys File", "type": "main", "index": 0 }]] },
-    "Read Keys File": { "main": [[{ "node": "Read Resume PDF", "type": "main", "index": 0 }]] },
+    "Manual Trigger": { "main": [[{ "node": "Read Resume PDF", "type": "main", "index": 0 }]] },
     "Read Resume PDF": { "main": [[{ "node": "Extract PDF Text", "type": "main", "index": 0 }]] },
     "Extract PDF Text": { "main": [[{ "node": "Set Job Preferences", "type": "main", "index": 0 }]] },
     "Set Job Preferences": { "main": [[
