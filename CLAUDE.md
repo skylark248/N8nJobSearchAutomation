@@ -171,7 +171,7 @@ Expert guidance for building production-ready n8n workflows. Skills activate aut
 | 25 | Save to Google Sheets | `n8n-nodes-base.googleSheets` | v4.5 | `saveToSheet` | appendOrUpdate matching on Job Title+Company+Apply Link. Status column excluded (preserves user edits) |
 | 26 | Build Email Digest | `n8n-nodes-base.code` | v2 | `buildEmail` | HTML email, maps both Google Sheets column names and camelCase field names. keyMatchingSkills pulled from $('Attach Cover Letter').all() and shown as green tags |
 | 27 | Send Gmail Digest | `n8n-nodes-base.gmail` | v2.1 | `sendDigest` | Send HTML digest |
-| 28 | Success Summary | `n8n-nodes-base.code` | v2 | `successOutput` | Return matchCount, topScore, emailSent, timestamp |
+| 28 | Success Summary | `n8n-nodes-base.code` | v2 | `successOutput` | Return matchCount, topScore, emailSent, timestamp — reads from `$('Build Email Digest').first().json` (NOT `$input.first()` — Gmail node output does not forward these fields) |
 
 ### Connection Map (27 connections)
 
@@ -221,17 +221,18 @@ Send Gmail Digest             -> Success Summary               (main)
 - Outputs `{ text: "..." }` with the full resume text
 
 **Set Job Preferences** (Code node):
+- **Reads API keys from `/home/node/jobsearch-keys.json`** via `fs.readFileSync` (v9.6) — file is mounted from `keys.json` in repo root via Docker volume. Keys validated at startup (throws if missing or still `YOUR_*`). `rapidApiKey` is trimmed to handle trailing spaces.
 - Reads resume text from `$input.first().json.text` (from Extract PDF Text)
 - **Cleans null chars**: `rawText.replace(/\u0000/g, '')` — PDF extraction produces `\u0000` artifacts replacing `+`, `%`, `~`, `()` etc.
 - Validates resume is not empty or too short (< 50 chars)
+- Uses `Object.assign({}, baseConfig, { searchQuery })` — NOT object spread `{ ...obj }` (spread causes "Unexpected token '.'" in n8n Code node sandbox)
 - Returns **7 items** for Bangalore-only targeted searches (location embedded in query string for JSearch):
   - `.NET Developer Bangalore India`, `Backend Engineer .NET Bangalore India`
   - `Microservices .NET Backend Engineer Bangalore India`, `SDE 2 .NET Bangalore India`
   - `Senior Software Engineer .NET Bangalore India`, `Azure .NET Developer Bangalore India`
   - `Software Engineer II .NET Bangalore India`
 - `minScore`: 75
-- API keys `openAiApiKey` (OpenAI), `rapidApiKey` (RapidAPI/JSearch), `apifyToken` (Apify/Naukri) stored here
-- `yourEmail` and `spreadsheetId`: configured inline
+- `yourEmail` and `spreadsheetId`: configured inline in node
 - Triggers all 3 branches in parallel: JSearch, Naukri .NET, Naukri C#
 
 **Search Jobs (JSearch)** (HTTP Request, id: `searchJobs`):
@@ -432,7 +433,8 @@ Runs weekday mornings at 9 AM. Use cron `0 9 * * 1-5` for weekdays only.
 .
 ├── README.md                 # Start here -- project overview & quickstart
 ├── CLAUDE.md                 # Claude Code instructions (this file)
-├── CHANGELOG.md              # Full version history v1.0 → current, with rationale per change
+├── CHANGELOG.md              # Redirect → see docs/CHANGELOG.md
+├── keys.json                 # API keys — fill in, never committed (gitignored)
 ├── .gitignore                # Excludes sensitive files, resumes, debug artifacts, .agents/
 ├── .gitmodules               # Git submodule references (n8n-mcp, n8n-skills)
 │
@@ -443,7 +445,8 @@ Runs weekday mornings at 9 AM. Use cron `0 9 * * 1-5` for weekdays only.
 │
 ├── docs/                     # All documentation
 │   ├── setup-guide.md        # Step-by-step credential setup (RapidAPI, OpenAI, Apify, Google OAuth2)
-│   └── workflow-reference.md # Complete 27-node workflow documentation with funnel data
+│   ├── workflow-reference.md # Complete 28-node workflow documentation with funnel data
+│   └── CHANGELOG.md          # Full version history v1.0 → current, with rationale per change
 │
 ├── exports/                  # Importable workflow JSON files
 │   └── job-search-automation.json  # Clean export (no credentials — all replaced with YOUR_* placeholders)
@@ -490,6 +493,7 @@ Runs weekday mornings at 9 AM. Use cron `0 9 * * 1-5` for weekdays only.
 
 ## Version History
 
+- **v9.6** (2026-04-12): API keys moved to `keys.json` file — read at runtime via `fs.readFileSync('/home/node/jobsearch-keys.json', 'utf8')` in Set Job Preferences instead of hardcoded values. Docker volume mount added for keys file; `N8N_RESTRICT_FILE_ACCESS_TO` updated. Fixed "Unexpected token '.'" error in Set Job Preferences: replaced object spread `{ ...obj }` with `Object.assign({}, obj)`. Added `.trim()` on `rapidApiKey`. Fixed Success Summary always showing `matchCount: 0, topScore: 0`: now reads from `$('Build Email Digest').first().json` (Gmail node output does not forward metadata fields). Confirmed execution #117: 25 matches, top score 100.
 - **v9.5** (2026-03-17): Fixed Naukri jobs being silently dropped in `parseJobs`. Root cause: n8n HTTP Request v4.2 unpacks JSON array responses into individual items — each Naukri job arrives as a plain object `{ title, company, apply_link, ... }`, so `Array.isArray(item.json)` always returned false. Fix: added a third case checking `item.json.title || item.json.jobTitle || item.json.positionName || item.json.companyName` for individual Naukri objects. Extracted `parseNaukriJob()` helper. Impact: ~50-60 additional Naukri jobs now parsed per run; expected raw total restored to design spec ~190-200 unique/run.
 - **v9.4** (2026-03-16): Fixed scoring ceiling at 85. Root cause: LLMs anchor "good match" in the 75-85 range when given a 0-100 scale with no arithmetic guidance — the model reads "BOOST by 8" and moves the score "a bit higher" rather than calculating literally. Fix: rewrote `scoreMatch` system prompt to use 4 explicit arithmetic steps (assign base → add boosts → subtract penalties → clamp), lowered base rubric top band to 82-88 (so boosts push above 85 instead of just reaching it), and added 6 calibration examples showing the model that 90-100 scores are achievable and expected (e.g. "Fintech .NET + microservices → 86+8+8 = 102 → capped 100"). matchReason now required to state which boosts/penalties were applied.
 - **v9.3** (2026-03-16): Two additions to `filterStackQuality`. (1) Bangalore location guard: jobs whose location field mentions another Indian city (Mumbai, Hyderabad, Chennai, Pune, Delhi, Gurugram/Gurgaon, Noida, Kolkata, Ahmedabad, Jaipur, Indore, Coimbatore) without mentioning Bangalore/Bengaluru are filtered out. Jobs with blank location or "Remote" pass through. (2) Company cap: max 3 roles per company per run — if a company has 4+ listings, the top 3 by title seniority are kept (Senior > SDE 2/SE II > others), extras dropped. Company name normalized by stripping India/Pvt/Ltd/Technologies/Solutions suffixes before comparison. Log line now reports off-location count and company cap drops.

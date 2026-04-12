@@ -216,12 +216,14 @@ With the v9.4 explicit arithmetic scoring prompt:
 .
 ├── README.md
 ├── CLAUDE.md                 # Claude Code AI config (full technical reference)
+├── keys.json                 # API keys — fill in, never committed (gitignored)
 ├── .env.example              # Template for environment variables
 ├── .gitignore
 │
 ├── docs/
 │   ├── setup-guide.md        # Step-by-step credential setup
-│   └── workflow-reference.md # Complete 28-node documentation
+│   ├── workflow-reference.md # Complete 28-node documentation
+│   └── CHANGELOG.md          # Full version history v1.0 → current
 │
 ├── exports/
 │   └── job-search-automation.json  # Importable n8n workflow (no credentials)

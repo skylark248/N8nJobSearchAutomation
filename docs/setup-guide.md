@@ -40,10 +40,12 @@ services:
       - "5678:5678"
     environment:
       N8N_RUNNERS_TASK_TIMEOUT: 900        # 15 min — Naukri Apify actor takes 4-5 min
-      N8N_RESTRICT_FILE_ACCESS_TO: /home/node/.n8n;/home/node/.n8n-files
+      NODE_FUNCTION_ALLOW_BUILTIN: child_process,fs,path,os  # enables fs.readFileSync in Code nodes
+      N8N_RESTRICT_FILE_ACCESS_TO: /home/node/.n8n;/home/node/.n8n-files;/home/node/jobsearch-keys.json
     volumes:
       - .:/home/node/.n8n                  # n8n runtime data
-      - ./N8nJobSearchAutomation/resumes:/home/node/.n8n-files  # resume PDFs
+      - ./N8nJobSearchAutomation/resumes:/home/node/.n8n-files        # resume PDFs
+      - ./N8nJobSearchAutomation/keys.json:/home/node/jobsearch-keys.json:ro  # API keys (read-only)
 ```
 
 ### Starting n8n
@@ -77,10 +79,13 @@ Place your resume as `N8nJobSearchAutomation/resumes/your-resume.pdf`. The Docke
 - This workflow uses **28 requests/run** (7 queries × 4 pages)
 - Supports ~7 runs/month on free tier — more than enough for weekly runs
 
-### Add to Workflow
-Open the **Set Job Preferences** node and set:
-```javascript
-rapidApiKey: 'YOUR_RAPIDAPI_KEY'
+### Add to keys.json
+Open `keys.json` in the repo root and set:
+```json
+{
+  "rapidApiKey": "YOUR_RAPIDAPI_KEY",
+  ...
+}
 ```
 
 ---
@@ -104,10 +109,13 @@ rapidApiKey: 'YOUR_RAPIDAPI_KEY'
 - Cover letters ~40 jobs × ~5500 tokens each: ~$0.011/run
 - **Total**: ~$0.076/run, ~$0.30/month at 4 runs/month
 
-### Add to Workflow
-Open the **Set Job Preferences** node and set:
-```javascript
-openAiApiKey: 'sk-proj-YOUR_KEY_HERE'
+### Add to keys.json
+Open `keys.json` in the repo root and set:
+```json
+{
+  "openAiApiKey": "sk-proj-YOUR_KEY_HERE",
+  ...
+}
 ```
 
 ---
@@ -137,10 +145,13 @@ openAiApiKey: 'sk-proj-YOUR_KEY_HERE'
 - Workflow runs **2 Apify calls in parallel** (.NET + C#) — total Naukri time: ~4-5 min
 - Timeout is set to **300000ms** (5 minutes) — do not reduce this
 
-### Add to Workflow
-Open the **Set Job Preferences** node and set:
-```javascript
-apifyToken: 'apify_api_YOUR_TOKEN_HERE'
+### Add to keys.json
+Open `keys.json` in the repo root and set:
+```json
+{
+  "apifyToken": "apify_api_YOUR_TOKEN_HERE",
+  ...
+}
 ```
 
 ---
@@ -244,19 +255,26 @@ spreadsheetId: 'YOUR_SPREADSHEET_ID'
 
 ## Final Configuration Checklist
 
-Open the **Set Job Preferences** node and verify all 5 values are set:
+### 1. Fill in `keys.json` (repo root)
+
+```json
+{
+  "rapidApiKey": "YOUR_RAPIDAPI_KEY",
+  "openAiApiKey": "sk-proj-YOUR_KEY",
+  "apifyToken": "apify_api_YOUR_TOKEN"
+}
+```
+
+This file is mounted read-only into Docker at `/home/node/jobsearch-keys.json`. It is gitignored — never committed.
+
+### 2. Edit the **Set Job Preferences** node for the remaining two values
 
 ```javascript
-const baseConfig = {
-  minScore: 75,                          // Jobs must score >= 75 to generate cover letter
-  yourEmail: 'YOUR_EMAIL@gmail.com',    // Where to send the digest
-  spreadsheetId: 'YOUR_SPREADSHEET_ID', // Google Sheet ID
-  openAiApiKey: 'sk-proj-YOUR_KEY',     // Must start with sk-proj-
-  rapidApiKey: 'YOUR_RAPIDAPI_KEY',     // From RapidAPI JSearch
-  apifyToken: 'apify_api_YOUR_TOKEN',   // From Apify console
-  resumeText: resumeText                // Populated automatically from PDF
-};
+yourEmail: 'YOUR_EMAIL@gmail.com',    // Where to send the digest
+spreadsheetId: 'YOUR_SPREADSHEET_ID', // Google Sheet ID from URL
 ```
+
+These two are not sensitive (no API keys) and are set directly in the node.
 
 ---
 
@@ -265,10 +283,9 @@ const baseConfig = {
 ### Before Running, Verify
 
 - [ ] Resume PDF at `resumes/your-resume.pdf`
-- [ ] `rapidApiKey` set in Set Job Preferences
-- [ ] `openAiApiKey` (with `sk-proj-` prefix) set in Set Job Preferences
-- [ ] `apifyToken` set in Set Job Preferences
-- [ ] `yourEmail` and `spreadsheetId` set in Set Job Preferences
+- [ ] `keys.json` filled with `rapidApiKey`, `openAiApiKey` (with `sk-proj-` prefix), `apifyToken`
+- [ ] Docker restarted after updating `keys.json` (volume mount must be active)
+- [ ] `yourEmail` and `spreadsheetId` set in the **Set Job Preferences** node
 - [ ] Google Sheets OAuth2 credential linked in Save to Google Sheets + Read Existing Jobs
 - [ ] Gmail OAuth2 credential linked in Send Gmail Digest
 - [ ] Google Sheet created with correct 12 headers and tab named "Job Tracker"
@@ -296,7 +313,9 @@ const baseConfig = {
 
 | Issue | Fix |
 |---|---|
-| "Authorization failed" on Score OpenAI API | Key missing `sk-proj-` prefix in Set Job Preferences |
+| "Cannot read keys.json" on Set Job Preferences | Docker not restarted after adding volume mount — run `docker compose down && docker compose up -d` |
+| "rapidApiKey not set" on Set Job Preferences | Fill in `keys.json` with your actual keys (not placeholders) |
+| "Authorization failed" on Score OpenAI API | `openAiApiKey` missing `sk-proj-` prefix in `keys.json` |
 | "Service refused connection" on Naukri | Timeout < 300000ms in Search Naukri node options |
 | "SSL Issue" on Search Naukri | Enable "Ignore SSL Issues" in Search Naukri node → Options |
 | "Task request timed out" on Set Job Preferences | Another workflow using task runner — wait and retry |
@@ -390,10 +409,11 @@ Jobs are freshest early Monday morning — many companies post over the weekend.
 If moving to a new server or fresh Docker install:
 
 - [ ] Import `exports/job-search-automation.json`
-- [ ] Set `rapidApiKey`, `openAiApiKey`, `apifyToken`, `yourEmail`, `spreadsheetId` in Set Job Preferences
+- [ ] Fill in `keys.json` with `rapidApiKey`, `openAiApiKey`, `apifyToken`
+- [ ] Set `yourEmail` and `spreadsheetId` in Set Job Preferences node
+- [ ] Configure `docker-compose.yml` with the `keys.json` volume mount and `N8N_RESTRICT_FILE_ACCESS_TO` (see Docker Setup section above)
 - [ ] Create and link **Google Sheets OAuth2** credential to Save to Google Sheets + Read Existing Jobs
 - [ ] Create and link **Gmail OAuth2** credential to Send Gmail Digest
 - [ ] Update OAuth redirect URI if n8n is on a different URL/port
 - [ ] Place resume PDF at `resumes/your-resume.pdf`
-- [ ] Configure Docker volume mount for resumes
-- [ ] Test run and verify Google Sheet + Gmail output
+- [ ] Restart Docker and verify workflow runs successfully

@@ -88,18 +88,30 @@ Filter New Jobs Only
 
 ### Node 4: Set Job Preferences
 - **ID**: `setPreferences` | **Type**: `n8n-nodes-base.code` v2
-- Central config. Reads resume text, strips null chars, outputs **7 items** (one per JSearch query).
+- Central config. Reads API keys from `keys.json`, reads resume text from PDF, strips null chars, outputs **7 items** (one per JSearch query).
 - All 7 items share the same `baseConfig` (API keys, minScore, email, spreadsheetId, resumeText).
 
 **Key config values:**
 ```javascript
 minScore: 75             // Jobs must score >= 75 to pass filter
-openAiApiKey: '...'      // Must start with sk-proj-
-rapidApiKey: '...'
-apifyToken: '...'
-yourEmail: '...'
-spreadsheetId: '...'
+openAiApiKey: '...'      // Read from /home/node/jobsearch-keys.json — must start with sk-proj-
+rapidApiKey: '...'       // Read from /home/node/jobsearch-keys.json — trimmed to remove trailing spaces
+apifyToken: '...'        // Read from /home/node/jobsearch-keys.json
+yourEmail: '...'         // Set inline in node
+spreadsheetId: '...'     // Set inline in node
 ```
+
+**API key loading (v9.6):**
+```javascript
+const fs = require('fs');  // available via NODE_FUNCTION_ALLOW_BUILTIN=fs
+let keys;
+try {
+  keys = JSON.parse(fs.readFileSync('/home/node/jobsearch-keys.json', 'utf8'));
+} catch(e) {
+  throw new Error('Cannot read keys.json: ' + e.message + '. Check Docker volume mount and restart.');
+}
+```
+Keys are validated (throws if missing or still set to `YOUR_*` placeholders). `rapidApiKey` is trimmed to handle trailing spaces.
 
 **7 JSearch queries (Bangalore embedded in string — better than location param):**
 ```
@@ -307,6 +319,7 @@ return [{ json: { jobs, count: jobs.length } }];
 ### Node 28: Success Summary
 - **ID**: `successOutput` | **Type**: `n8n-nodes-base.code` v2
 - Returns `{ success: true, matchCount, topScore, emailSent, sentTo, timestamp }`
+- Reads `matchCount`, `topScore`, and `yourEmail` from `$('Build Email Digest').first().json` — **not** from `$input.first()` (the Gmail node output does not forward these fields)
 
 ---
 
@@ -419,6 +432,12 @@ n8n HTTP Request v4.2 **unpacks** JSON array responses into individual items —
 ### Naukri Apply Link Field Name
 The `nuclear_quietude~naukri-job-scraper` actor uses `apply_link` (snake_case). The Parse Job Results node checks `job.apply_link` first before other fallbacks.
 
+### Object Spread Not Supported in Code Node Sandbox
+Using `{ ...obj, newProp }` in a Code node can cause "Unexpected token '.'" in some n8n sandbox environments. Use `Object.assign({}, obj, { newProp })` instead — it is ES6 and universally supported.
+
+### Success Summary Must Reference Build Email Digest Directly
+The Gmail node (`Send Gmail Digest`) does not forward metadata fields (`matchCount`, `topScore`, `yourEmail`) in its output — it only returns Gmail API response data. Reading `$input.first().json` in Success Summary therefore always yields 0 for those fields. Always reference the upstream Code node: `$('Build Email Digest').first().json`.
+
 ---
 
 ## Scheduling
@@ -449,6 +468,7 @@ Monday mornings are optimal — many companies post over the weekend.
 
 ## Version History
 
+- **v9.6** (2026-04-12): API keys moved to `keys.json` file (mounted at `/home/node/jobsearch-keys.json`) — read at runtime via `fs.readFileSync` in Set Job Preferences instead of being hardcoded. Fixed "Unexpected token '.'" error by replacing object spread with `Object.assign`. Fixed Success Summary always showing `matchCount: 0, topScore: 0` — now reads from `$('Build Email Digest').first().json` instead of Gmail node output. Confirmed in execution #117: 25 matches, top score 100.
 - **v9.5** (2026-03-17): Fixed Naukri jobs silently dropped in Parse Job Results. Root cause: n8n HTTP Request v4.2 unpacks JSON array responses into individual items — each Naukri job arrives as `{ title, company, apply_link, ... }` (plain object), so `Array.isArray(item.json)` always returned false → all 20-40 Naukri jobs per search were skipped. Fix: added third format case checking `item.json.title || item.json.jobTitle || ...` for individual Naukri objects. Extracted `parseNaukriJob()` helper. Impact: ~50-60 more jobs per run; total raw restored to design spec ~190-200 unique/run. Node count: 28 (unchanged).
 - **v9.4** (2026-03-16): Fixed score ceiling stuck at 85. GPT-4o-mini anchors "good match" at 75-85 without explicit arithmetic. Fix: rewrote scoreMatch prompt with 4-step arithmetic (base → +8 boosts → -15 penalties → clamp), base rubric top band lowered to 82-88 (so boosts push above 85), and 6 calibration examples showing 90-100 is expected. matchReason now required to state applied boosts/penalties.
 - **v9.3** (2026-03-16): Added Bangalore location guard and company cap to filterStackQuality. Location guard removes jobs mentioning another Indian city without Bangalore/Bengaluru. Company cap: max 3 roles per company per run (keeps highest seniority). Company name normalized by stripping India/Pvt/Ltd/Technologies/Solutions suffixes.
