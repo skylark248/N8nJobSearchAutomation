@@ -1,5 +1,9 @@
 {
+  "id": "8vs888j57KeLaGtH",
   "name": "Job Search Automation",
+  "description": null,
+  "active": false,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {},
@@ -329,7 +333,12 @@
       "position": [
         2208,
         304
-      ]
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets OAuth2"
+        }
+      }
     },
     {
       "parameters": {
@@ -672,7 +681,12 @@
       "position": [
         4960,
         64
-      ]
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets OAuth2"
+        }
+      }
     },
     {
       "parameters": {
@@ -703,7 +717,12 @@
         5456,
         64
       ],
-      "webhookId": "070ae7ac-9add-48e7-b1be-2d7a49576389"
+      "webhookId": "070ae7ac-9add-48e7-b1be-2d7a49576389",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail OAuth2"
+        }
+      }
     },
     {
       "parameters": {
@@ -1033,12 +1052,38 @@
       ]
     }
   },
-  "active": false,
   "settings": {
     "executionOrder": "v1",
-    "callerPolicy": "workflowsFromSameOwner"
+    "callerPolicy": "workflowsFromSameOwner",
+    "binaryMode": "separate",
+    "availableInMCP": false
   },
+  "staticData": null,
   "meta": {
-    "templateCredsSetupCompleted": false
-  }
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionCounter": 22,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-05T10:44:21.593Z",
+      "createdAt": "2026-05-05T10:44:21.593Z",
+      "role": "workflow:owner",
+      "workflowId": "8vs888j57KeLaGtH",
+      "projectId": "v57MF9hninLQjJn1",
+      "project": {
+        "updatedAt": "2026-04-13T17:51:12.677Z",
+        "createdAt": "2026-04-13T17:48:21.460Z",
+        "id": "v57MF9hninLQjJn1",
+        "name": "Shivansh Choudhary <rstars97@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "ee59bf0a-c34b-40df-ba84-2e01eda2ef35"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": null
 }

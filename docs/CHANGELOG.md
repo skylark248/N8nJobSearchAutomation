@@ -4,6 +4,17 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.9] — 2026-05-05
+
+### Fixed
+- **Mode regression in v9.8** — when applying the v9.8 fixes, the base JSON used was an outdated pre-v9.7 snapshot rather than a fresh API fetch. All 9 Code nodes that had been set to `runOnceForAllItems` in v9.7 reverted to `runOnceForEachItem` again. Re-applied all mode fixes by fetching fresh from the live n8n REST API and patching in-place. Root cause noted in dev guidelines: always `curl` fresh from API before any workflow edit.
+- **minScore confirmed at 70** — v9.8 set minScore to 50 in docs, but user raised it to 70 via n8n UI. Updated Set Job Preferences node via REST API to persist `minScore: 70` in code (not just UI override), exported to JSON.
+
+### Changed
+- **Audit script** (`audit_workflow.js`) — wrote a comprehensive automated audit that checks all 28 nodes for: Code node mode vs `$input` usage pattern, node name references in code that don't exist, placeholder values, HTTP Authorization header expression syntax, Merge node input counts, Google Sheets credentials/documentId/matchingColumns, Gmail credentials/sendTo, unreachable nodes (no incoming connections), dead-end nodes (no outgoing connections), and specific logic checks for key cross-node references. Run with `node audit_workflow.js` after loading `wf_audit2.json` from live API.
+
+---
+
 ## [v9.8] — 2026-05-05
 
 ### Fixed
