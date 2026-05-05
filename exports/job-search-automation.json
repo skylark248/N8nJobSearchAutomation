@@ -7,7 +7,10 @@
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [0, 0]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
@@ -17,7 +20,10 @@
       "name": "Read Resume PDF",
       "type": "n8n-nodes-base.readBinaryFile",
       "typeVersion": 1,
-      "position": [250, 0]
+      "position": [
+        256,
+        0
+      ]
     },
     {
       "parameters": {
@@ -30,62 +36,104 @@
       "name": "Extract PDF Text",
       "type": "n8n-nodes-base.extractFromFile",
       "typeVersion": 1.1,
-      "position": [500, 0]
+      "position": [
+        512,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// === READ API KEYS FROM keys.json ===\nconst fs = require('fs');\nlet keys;\ntry {\n  keys = JSON.parse(fs.readFileSync('/home/node/jobsearch-keys.json', 'utf8'));\n} catch(e) {\n  throw new Error('Cannot read keys.json: ' + e.message + '. Check Docker volume mount and restart.');\n}\n\nif (!keys.rapidApiKey || keys.rapidApiKey.trim().startsWith('YOUR_')) {\n  throw new Error('keys.json: rapidApiKey not set. Fill in keys.json and restart Docker.');\n}\nif (!keys.openAiApiKey || keys.openAiApiKey.startsWith('YOUR_')) {\n  throw new Error('keys.json: openAiApiKey not set. Fill in keys.json and restart Docker.');\n}\nif (!keys.apifyToken || keys.apifyToken.startsWith('YOUR_')) {\n  throw new Error('keys.json: apifyToken not set. Fill in keys.json and restart Docker.');\n}\n\n// === READ RESUME FROM PDF ===\nconst rawText = $input.first().json.text;\n\nif (!rawText || rawText.trim().length < 50) {\n  throw new Error('Resume PDF appears empty or too short.');\n}\n\n// Clean up null characters introduced by PDF extraction\nconst resumeText = rawText.replace(/\\u0000/g, '').trim();\n\nconst baseConfig = {\n  minScore: 75,\n  yourEmail: 'YOUR_EMAIL@gmail.com',\n  spreadsheetId: 'YOUR_GOOGLE_SHEET_ID',\n  openAiApiKey: keys.openAiApiKey,\n  rapidApiKey: keys.rapidApiKey.trim(),\n  apifyToken: keys.apifyToken,\n  resumeText: resumeText\n};\n\n// 7 targeted JSearch searches: .NET/C#/Azure/Microservices roles, Bangalore only\nconst queries = [\n  '.NET Developer Bangalore India',\n  'Backend Engineer .NET Bangalore India',\n  'Microservices .NET Backend Engineer Bangalore India',\n  'SDE 2 .NET Bangalore India',\n  'Senior Software Engineer .NET Bangalore India',\n  'Azure .NET Developer Bangalore India',\n  'Software Engineer II .NET Bangalore India'\n];\n\nreturn queries.map(function(q) {\n  return { json: Object.assign({}, baseConfig, { searchQuery: q }) };\n});"
+        "jsCode": "// === READ API KEYS FROM keys.json ===\nconst fs = require('fs');\nlet keys;\ntry {\n  keys = JSON.parse(fs.readFileSync('/home/node/jobsearch-keys.json', 'utf8'));\n} catch(e) {\n  throw new Error('Cannot read keys.json: ' + e.message + '. Check Docker volume mount and restart.');\n}\n\nif (!keys.rapidApiKey || keys.rapidApiKey.trim().startsWith('YOUR_')) {\n  throw new Error('keys.json: rapidApiKey not set. Fill in keys.json and restart Docker.');\n}\nif (!keys.openAiApiKey || keys.openAiApiKey.startsWith('YOUR_')) {\n  throw new Error('keys.json: openAiApiKey not set. Fill in keys.json and restart Docker.');\n}\nif (!keys.apifyToken || keys.apifyToken.startsWith('YOUR_')) {\n  throw new Error('keys.json: apifyToken not set. Fill in keys.json and restart Docker.');\n}\n\n// === READ RESUME FROM PDF ===\nconst rawText = $input.first().json.text;\n\nif (!rawText || rawText.trim().length < 50) {\n  throw new Error('Resume PDF appears empty or too short.');\n}\n\n// Clean up null characters introduced by PDF extraction\nconst resumeText = rawText.replace(/\\u0000/g, '').trim();\n\nconst baseConfig = {\n  minScore: 50,\n  yourEmail: 'YOUR_EMAIL@gmail.com',\n  spreadsheetId: 'YOUR_GOOGLE_SHEET_ID',\n  openAiApiKey: keys.openAiApiKey,\n  rapidApiKey: keys.rapidApiKey.trim(),\n  apifyToken: keys.apifyToken,\n  resumeText: resumeText\n};\n\n// 7 targeted JSearch searches: .NET/C#/Azure/Microservices roles, Bangalore only\nconst queries = [\n  '.NET Developer Bangalore India',\n  'Backend Engineer .NET Bangalore India',\n  'Microservices .NET Backend Engineer Bangalore India',\n  'SDE 2 .NET Bangalore India',\n  'Senior Software Engineer .NET Bangalore India',\n  'Azure .NET Developer Bangalore India',\n  'Software Engineer II .NET Bangalore India'\n];\n\nreturn queries.map(function(q) {\n  return { json: Object.assign({}, baseConfig, { searchQuery: q }) };\n});"
       },
       "id": "setPreferences",
       "name": "Set Job Preferences",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [750, 0]
+      "position": [
+        752,
+        0
+      ]
     },
     {
       "parameters": {
         "url": "https://jsearch.p.rapidapi.com/search",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "X-RapidAPI-Key", "value": "={{ $json.rapidApiKey }}" },
-            { "name": "X-RapidAPI-Host", "value": "jsearch.p.rapidapi.com" }
-          ]
-        },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "query", "value": "={{ $json.searchQuery }}" },
-            { "name": "page", "value": "1" },
-            { "name": "num_pages", "value": "4" },
-            { "name": "country", "value": "in" },
-            { "name": "date_posted", "value": "week" },
-            { "name": "employment_types", "value": "FULLTIME" },
-            { "name": "language", "value": "en" }
+            {
+              "name": "query",
+              "value": "={{ $json.searchQuery }}"
+            },
+            {
+              "name": "page",
+              "value": "1"
+            },
+            {
+              "name": "num_pages",
+              "value": "4"
+            },
+            {
+              "name": "country",
+              "value": "in"
+            },
+            {
+              "name": "date_posted",
+              "value": "week"
+            },
+            {
+              "name": "employment_types",
+              "value": "FULLTIME"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Key",
+              "value": "={{ $json.rapidApiKey }}"
+            },
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
           ]
         },
         "options": {
-          "timeout": 30000,
           "batching": {
-            "batch": { "batchSize": 1, "batchInterval": 1000 }
-          }
+            "batch": {
+              "batchSize": 1
+            }
+          },
+          "timeout": 30000
         }
       },
       "id": "searchJobs",
       "name": "Search Google Jobs (JSearch)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1200, -200]
+      "position": [
+        1200,
+        -208
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const config = $input.first().json;\n\nreturn [\n  {\n    json: {\n      apifyToken: config.apifyToken,\n      naukriJobTitle: '.NET Developer',\n      naukriLocation: 'Bangalore'\n    }\n  }\n];"
+        "jsCode": "const config = $input.first().json;\n\nreturn [\n  {\n    json: {\n      apifyToken: config.apifyToken,\n      naukriJobTitle: '.NET Developer',\n      naukriLocation: 'Bangalore'\n    }\n  }\n];",
+        "mode": "runOnceForAllItems"
       },
       "id": "setNaukriQueries",
       "name": "Set Naukri Queries",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1000, 100]
+      "position": [
+        1008,
+        112
+      ]
     },
     {
       "parameters": {
@@ -94,40 +142,64 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "token", "value": "={{ $json.apifyToken }}" }
+            {
+              "name": "token",
+              "value": "={{ $json.apifyToken }}"
+            }
           ]
         },
         "sendBody": true,
-        "contentType": "json",
         "bodyParameters": {
           "parameters": [
-            { "name": "job_title", "value": "={{ $json.naukriJobTitle }}" },
-            { "name": "location", "value": "={{ $json.naukriLocation }}" },
-            { "name": "experience", "value": 5 },
-            { "name": "no_of_jobs", "value": 30 },
-            { "name": "job_age", "value": "7" }
+            {
+              "name": "job_title",
+              "value": "={{ $json.naukriJobTitle }}"
+            },
+            {
+              "name": "location",
+              "value": "={{ $json.naukriLocation }}"
+            },
+            {
+              "name": "experience",
+              "value": 5
+            },
+            {
+              "name": "no_of_jobs",
+              "value": 30
+            },
+            {
+              "name": "job_age",
+              "value": "7"
+            }
           ]
         },
         "options": {
-          "timeout": 300000,
-          "allowUnauthorizedCerts": true
+          "allowUnauthorizedCerts": true,
+          "timeout": 300000
         }
       },
       "id": "searchNaukri",
       "name": "Search Naukri (Apify)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1200, 100]
+      "position": [
+        1200,
+        112
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const config = $input.first().json;\n\nreturn [\n  {\n    json: {\n      apifyToken: config.apifyToken,\n      naukriJobTitle: 'C# Developer',\n      naukriLocation: 'Bangalore'\n    }\n  }\n];"
+        "jsCode": "const config = $input.first().json;\n\nreturn [\n  {\n    json: {\n      apifyToken: config.apifyToken,\n      naukriJobTitle: 'C# Developer',\n      naukriLocation: 'Bangalore'\n    }\n  }\n];",
+        "mode": "runOnceForAllItems"
       },
       "id": "setNaukriQueriesCSharp",
       "name": "Set Naukri Queries (C#)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1000, 300]
+      "position": [
+        1008,
+        304
+      ]
     },
     {
       "parameters": {
@@ -136,119 +208,170 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "token", "value": "={{ $json.apifyToken }}" }
+            {
+              "name": "token",
+              "value": "={{ $json.apifyToken }}"
+            }
           ]
         },
         "sendBody": true,
-        "contentType": "json",
         "bodyParameters": {
           "parameters": [
-            { "name": "job_title", "value": "={{ $json.naukriJobTitle }}" },
-            { "name": "location", "value": "={{ $json.naukriLocation }}" },
-            { "name": "experience", "value": 5 },
-            { "name": "no_of_jobs", "value": 30 },
-            { "name": "job_age", "value": "7" }
+            {
+              "name": "job_title",
+              "value": "={{ $json.naukriJobTitle }}"
+            },
+            {
+              "name": "location",
+              "value": "={{ $json.naukriLocation }}"
+            },
+            {
+              "name": "experience",
+              "value": 5
+            },
+            {
+              "name": "no_of_jobs",
+              "value": 30
+            },
+            {
+              "name": "job_age",
+              "value": "7"
+            }
           ]
         },
         "options": {
-          "timeout": 300000,
-          "allowUnauthorizedCerts": true
+          "allowUnauthorizedCerts": true,
+          "timeout": 300000
         }
       },
       "id": "searchNaukriCSharp",
       "name": "Search Naukri C# (Apify)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1200, 300]
+      "position": [
+        1200,
+        304
+      ]
     },
     {
-      "parameters": { "mode": "append" },
+      "parameters": {
+        "mode": "append"
+      },
       "id": "mergeSearchResults",
       "name": "Merge Search Results",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [1450, 50]
+      "position": [
+        1456,
+        64
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const allItems = $input.all();\nlet allJobs = [];\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  try {\n    const u = new URL(url);\n    return (u.hostname + u.pathname).toLowerCase().replace(/\\/$/, '');\n  } catch(e) { return url.toLowerCase().trim().substring(0, 200); }\n}\n\nfunction hashJob(company, title, applyLink) {\n  const raw = applyLink ? normalizeUrl(applyLink) : ((company || '').toLowerCase().trim() + '|' + (title || '').toLowerCase().trim());\n  let hash = 0;\n  for (let i = 0; i < raw.length; i++) {\n    const char = raw.charCodeAt(i);\n    hash = ((hash << 5) - hash) + char;\n    hash = hash & hash;\n  }\n  return 'JOB_' + Math.abs(hash).toString(36);\n}\n\nfunction parseNaukriJob(job) {\n  const company = job.companyName || job.company || 'Unknown Company';\n  const title = job.jobTitle || job.title || job.positionName || 'Unknown Title';\n  const applyLink = job.apply_link || job.jobUrl || job.url || job.applyLink || '';\n  return {\n    jobId: hashJob(company, title, applyLink),\n    title,\n    company,\n    location: job.location || job.jobLocation || job.city || 'Bangalore',\n    description: (job.jobDescription || job.description || job.jobSummary || '').substring(0, 3000),\n    postedDate: job.datePosted || job.postedDate || job.posted || job.date || 'Unknown',\n    applyLink,\n    source: 'Naukri',\n    salary: job.salary || job.salaryRange || job.ctc || 'Not listed',\n    schedule: job.employmentType || job.jobType || job.workplaceType || ''\n  };\n}\n\nfor (const item of allItems) {\n  if (item.json.data && Array.isArray(item.json.data)) {\n    // JSearch format: single response item with data[] array\n    const jobs = item.json.data;\n    const parsed = jobs.map(job => {\n      const location = [job.job_city, job.job_state].filter(Boolean).join(', ') || 'Bangalore';\n      let salary = 'Not listed';\n      if (job.job_min_salary && job.job_max_salary) {\n        salary = `${job.job_salary_currency || ''} ${job.job_min_salary}-${job.job_max_salary} ${job.job_salary_period || ''}`.trim();\n      }\n      const applyLink = job.job_apply_link || job.job_google_link || '';\n      return {\n        jobId: hashJob(job.employer_name, job.job_title, applyLink),\n        title: job.job_title || 'Unknown Title',\n        company: job.employer_name || 'Unknown Company',\n        location,\n        description: (job.job_description || '').substring(0, 3000),\n        postedDate: job.job_posted_at_datetime_utc ? job.job_posted_at_datetime_utc.split('T')[0] : 'Unknown',\n        applyLink,\n        source: job.job_publisher || 'JSearch',\n        salary,\n        schedule: job.job_employment_type || ''\n      };\n    });\n    allJobs.push(...parsed);\n  } else if (Array.isArray(item.json)) {\n    // Apify/Naukri format — full array in one item (fallback)\n    allJobs.push(...item.json.map(parseNaukriJob));\n  } else if (item.json.title || item.json.jobTitle || item.json.positionName || item.json.companyName) {\n    // Individual Naukri/Apify job object — n8n HTTP Request unpacks JSON arrays into individual items\n    allJobs.push(parseNaukriJob(item.json));\n  }\n}\n\nif (allJobs.length === 0) {\n  throw new Error('No jobs found from any source. Check your API keys and queries.');\n}\n\nreturn { json: { jobs: allJobs, totalFound: allJobs.length } };"
+        "jsCode": "const allItems = $input.all();\nlet allJobs = [];\n\nfunction normalizeUrl(url) {\n  if (!url) return '';\n  try {\n    const u = new URL(url);\n    return (u.hostname + u.pathname).toLowerCase().replace(/\\/$/, '');\n  } catch(e) { return url.toLowerCase().trim().substring(0, 200); }\n}\n\nfunction hashJob(company, title, applyLink) {\n  const raw = applyLink ? normalizeUrl(applyLink) : ((company || '').toLowerCase().trim() + '|' + (title || '').toLowerCase().trim());\n  let hash = 0;\n  for (let i = 0; i < raw.length; i++) {\n    const char = raw.charCodeAt(i);\n    hash = ((hash << 5) - hash) + char;\n    hash = hash & hash;\n  }\n  return 'JOB_' + Math.abs(hash).toString(36);\n}\n\nfunction parseNaukriJob(job) {\n  const company = job.companyName || job.company || 'Unknown Company';\n  const title = job.jobTitle || job.title || job.positionName || 'Unknown Title';\n  const applyLink = job.apply_link || job.jobUrl || job.url || job.applyLink || '';\n  return {\n    jobId: hashJob(company, title, applyLink),\n    title,\n    company,\n    location: job.location || job.jobLocation || job.city || 'Bangalore',\n    description: (job.jobDescription || job.description || job.jobSummary || '').substring(0, 3000),\n    postedDate: job.datePosted || job.postedDate || job.posted || job.date || 'Unknown',\n    applyLink,\n    source: 'Naukri',\n    salary: job.salary || job.salaryRange || job.ctc || 'Not listed',\n    schedule: job.employmentType || job.jobType || job.workplaceType || ''\n  };\n}\n\nfor (const item of allItems) {\n  if (item.json.data && Array.isArray(item.json.data)) {\n    // JSearch format: single response item with data[] array\n    const jobs = item.json.data;\n    const parsed = jobs.map(job => {\n      const location = [job.job_city, job.job_state].filter(Boolean).join(', ') || 'Bangalore';\n      let salary = 'Not listed';\n      if (job.job_min_salary && job.job_max_salary) {\n        salary = `${job.job_salary_currency || ''} ${job.job_min_salary}-${job.job_max_salary} ${job.job_salary_period || ''}`.trim();\n      }\n      const applyLink = job.job_apply_link || job.job_google_link || '';\n      return {\n        jobId: hashJob(job.employer_name, job.job_title, applyLink),\n        title: job.job_title || 'Unknown Title',\n        company: job.employer_name || 'Unknown Company',\n        location,\n        description: (job.job_description || '').substring(0, 3000),\n        postedDate: job.job_posted_at_datetime_utc ? job.job_posted_at_datetime_utc.split('T')[0] : 'Unknown',\n        applyLink,\n        source: job.job_publisher || 'JSearch',\n        salary,\n        schedule: job.job_employment_type || ''\n      };\n    });\n    allJobs.push(...parsed);\n  } else if (Array.isArray(item.json)) {\n    // Apify/Naukri format — full array in one item (fallback)\n    allJobs.push(...item.json.map(parseNaukriJob));\n  } else if (item.json.title || item.json.jobTitle || item.json.positionName || item.json.companyName) {\n    // Individual Naukri/Apify job object — n8n HTTP Request unpacks JSON arrays into individual items\n    allJobs.push(parseNaukriJob(item.json));\n  }\n}\n\nif (allJobs.length === 0) {\n  throw new Error('No jobs found from any source. Check your API keys and queries.');\n}\n\nreturn { json: { jobs: allJobs, totalFound: allJobs.length } };",
+        "mode": "runOnceForAllItems"
       },
       "id": "parseJobs",
       "name": "Parse Job Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1700, 50]
+      "position": [
+        1712,
+        64
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const allResults = $input.all();\nconst uniqueJobs = new Map();\n\nfor (const result of allResults) {\n  const jobs = result.json.jobs || [];\n  for (const job of jobs) {\n    if (!uniqueJobs.has(job.jobId)) {\n      uniqueJobs.set(job.jobId, job);\n    }\n  }\n}\n\nreturn Array.from(uniqueJobs.values()).map(job => ({ json: job }));"
+        "jsCode": "const allResults = $input.all();\nconst uniqueJobs = new Map();\n\nfor (const result of allResults) {\n  const jobs = result.json.jobs || [];\n  for (const job of jobs) {\n    if (!uniqueJobs.has(job.jobId)) {\n      uniqueJobs.set(job.jobId, job);\n    }\n  }\n}\n\nreturn Array.from(uniqueJobs.values()).map(job => ({ json: job }));",
+        "mode": "runOnceForAllItems"
       },
       "id": "filterDuplicates",
       "name": "Filter Duplicates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1950, 50]
+      "position": [
+        1952,
+        64
+      ]
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "// Collapse N job items into 1 so Read Existing Jobs runs exactly once (not per-job)\nconst jobs = $input.all().map(item => item.json);\nreturn [{ json: { jobs, count: jobs.length } }];"
+        "jsCode": "// Collapse N job items into 1 so Read Existing Jobs runs exactly once (not per-job)\nconst jobs = $input.all().map(item => item.json);\nreturn [{ json: { jobs, count: jobs.length } }];",
+        "mode": "runOnceForAllItems"
       },
       "id": "aggregateJobs",
       "name": "Aggregate Jobs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2200, 50]
+      "position": [
+        2208,
+        64
+      ]
     },
     {
       "parameters": {
-        "operation": "read",
         "documentId": {
-          "value": "YOUR_GOOGLE_SHEET_ID",
           "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
           "mode": "id"
         },
         "sheetName": {
-          "value": "Job Tracker",
           "__rl": true,
+          "value": "Job Tracker",
           "mode": "name"
         },
-        "options": {}
+        "options": {},
+        "operation": "read"
       },
       "id": "readExistingJobs",
       "name": "Read Existing Jobs",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [2200, 300]
+      "position": [
+        2208,
+        304
+      ]
     },
     {
-      "parameters": { "mode": "append" },
+      "parameters": {
+        "mode": "append"
+      },
       "id": "syncDedup",
       "name": "Sync Dedup Inputs",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [2450, 175]
+      "position": [
+        2464,
+        176
+      ]
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "function normalizeUrl(url) {\n  if (!url) return '';\n  try {\n    const u = new URL(url);\n    return (u.hostname + u.pathname).toLowerCase().replace(/\\/$/, '');\n  } catch(e) { return url.toLowerCase().trim().substring(0, 200); }\n}\n\nconst all = $input.all();\n\n// Separate by shape: jobs item has {jobs:[...], count:N}, sheet rows have {Apply Link:...}\nconst jobsItem = all.find(i => Array.isArray(i.json.jobs));\nconst sheetRows = all.filter(i => !Array.isArray(i.json.jobs));\n\nconst jobs = jobsItem ? jobsItem.json.jobs : [];\n\nconst seenLinks = new Set(\n  sheetRows.map(r => normalizeUrl(r.json['Apply Link'] || '')).filter(Boolean)\n);\nconst seenTitles = new Set(\n  sheetRows.map(r => ((r.json['Company'] || '') + '|' + (r.json['Job Title'] || '')).toLowerCase().trim()).filter(s => s !== '|')\n);\n\nconst newJobs = jobs.filter(job => {\n  const link = normalizeUrl(job.applyLink || '');\n  if (link) return !seenLinks.has(link);\n  const key = ((job.company || '') + '|' + (job.title || '')).toLowerCase().trim();\n  return !seenTitles.has(key);\n});\n\nif (newJobs.length === 0) {\n  throw new Error('No new jobs this week \\u2014 all ' + jobs.length + ' results were already seen in previous runs.');\n}\n\nreturn newJobs.map(job => ({ json: job }));"
+        "jsCode": "function normalizeUrl(url) {\n  if (!url) return '';\n  try {\n    const u = new URL(url);\n    return (u.hostname + u.pathname).toLowerCase().replace(/\\/$/, '');\n  } catch(e) { return url.toLowerCase().trim().substring(0, 200); }\n}\n\nconst all = $input.all();\n\n// Separate by shape: jobs item has {jobs:[...], count:N}, sheet rows have {Apply Link:...}\nconst jobsItem = all.find(i => Array.isArray(i.json.jobs));\nconst sheetRows = all.filter(i => !Array.isArray(i.json.jobs));\n\nconst jobs = jobsItem ? jobsItem.json.jobs : [];\n\nconst seenLinks = new Set(\n  sheetRows.map(r => normalizeUrl(r.json['Apply Link'] || '')).filter(Boolean)\n);\nconst seenTitles = new Set(\n  sheetRows.map(r => ((r.json['Company'] || '') + '|' + (r.json['Job Title'] || '')).toLowerCase().trim()).filter(s => s !== '|')\n);\n\nconst newJobs = jobs.filter(job => {\n  const link = normalizeUrl(job.applyLink || '');\n  if (link) return !seenLinks.has(link);\n  const key = ((job.company || '') + '|' + (job.title || '')).toLowerCase().trim();\n  return !seenTitles.has(key);\n});\n\nif (newJobs.length === 0) {\n  throw new Error('No new jobs this week \\u2014 all ' + jobs.length + ' results were already seen in previous runs.');\n}\n\nreturn newJobs.map(job => ({ json: job }));",
+        "mode": "runOnceForAllItems"
       },
       "id": "filterNewJobs",
       "name": "Filter New Jobs Only",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2700, 50]
+      "position": [
+        2704,
+        64
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\n// Non-.NET stack patterns in job title\nconst nonDotNetTitlePatterns = [\n  /\\bjava\\s*(developer|engineer|backend|full.?stack|programmer)\\b/i,\n  /\\bnode\\.?js\\s*(developer|engineer|backend|full.?stack)\\b/i,\n  /\\bpython\\s*(developer|engineer|backend|programmer)\\b/i,\n  /\\bruby\\s*(developer|engineer|on rails)\\b/i,\n  /\\bgolang\\b/i,\n  /\\bphp\\s*(developer|engineer|programmer)\\b/i,\n  /\\bandroid\\s*(developer|engineer)\\b/i,\n  /\\bios\\s*(developer|engineer)\\b/i,\n  /\\bflutter\\s*(developer|engineer)\\b/i,\n  /\\breact\\s*native\\s*(developer|engineer)\\b/i,\n  /\\bdata\\s*(scientist|analyst)\\b/i,\n  /\\bmachine\\s*learning\\s*(engineer|developer)\\b/i,\n  /\\bsalesforce\\s*(developer|engineer|consultant)\\b/i,\n  /\\bsap\\s*(developer|consultant|abap)\\b/i,\n];\n\n// .NET/C# in title overrides blacklist\nconst dotNetTitlePatterns = [/\\.net/i, /\\bc#\\b/i, /\\basp\\.net/i, /\\bdotnet\\b/i];\n\n// Too junior roles\nconst tooJuniorPatterns = [\n  /\\bfresher\\b/i,\n  /\\binternship\\b/i,\n  /\\b(junior|jr\\.?)\\s*(developer|engineer|sde|programmer)\\b/i,\n  /\\bgraduate\\s*(engineer|developer|trainee)\\b/i,\n  /\\btrainee\\s*(engineer|developer|software)\\b/i,\n  /\\b0[-]?[12]\\s*years?\\b/i,\n];\n\n// Too senior roles\nconst tooSeniorPatterns = [\n  /\\bprincipal\\s*(engineer|architect|developer|software)\\b/i,\n  /\\bstaff\\s*(engineer|developer|software)\\b/i,\n  /\\b(vp|vice president)\\s*(of|,)?\\s*(engineering|technology|software)\\b/i,\n  /\\b(cto|chief\\s*technology\\s*officer)\\b/i,\n  /\\bengineering\\s*director\\b/i,\n];\n\n// Other Indian cities without Bangalore \u2014 these are out-of-area\nconst otherCityPattern = /\\b(mumbai|hyderabad|chennai|pune|delhi|gurugram|gurgaon|noida|kolkata|ahmedabad|jaipur|indore|coimbatore)\\b/i;\n\n// Title seniority score for company cap (higher = keep)\nfunction seniorityScore(title) {\n  if (/\\b(senior|sr\\.?|lead|tech lead)\\b/i.test(title)) return 3;\n  if (/\\b(sde\\s*[23]|se\\s*[23]|engineer\\s*(ii|iii)|developer\\s*(ii|iii)|software\\s*engineer\\s*(2|3))\\b/i.test(title)) return 2;\n  return 1;\n}\n\nconst filtered = [];\nconst removed = { nonDotNet: [], tooJunior: [], tooSenior: [], overExperienced: 0, offLocation: 0, shortDesc: 0 };\n\nfor (const item of items) {\n  const title = item.json.title || '';\n  const desc = item.json.description || '';\n  const location = item.json.location || '';\n\n  const hasDotNetInTitle = dotNetTitlePatterns.some(p => p.test(title));\n  if (!hasDotNetInTitle && nonDotNetTitlePatterns.some(p => p.test(title))) {\n    removed.nonDotNet.push(title);\n    continue;\n  }\n\n  if (tooJuniorPatterns.some(p => p.test(title))) {\n    removed.tooJunior.push(title);\n    continue;\n  }\n\n  if (tooSeniorPatterns.some(p => p.test(title))) {\n    removed.tooSenior.push(title);\n    continue;\n  }\n\n  // Block roles requiring 8+ years minimum (candidate has ~5 years, target range 4-6)\n  const expMatch = desc.match(/\\b(\\d+)\\s*\\+\\s*years?\\s*(of\\s+)?(experience|exp)/i) ||\n                   desc.match(/(?:minimum|at\\s+least|min\\.?)\\s*(\\d+)\\s*years?\\s*(of\\s+)?(experience|exp)/i) ||\n                   desc.match(/(\\d+)\\s*years?\\s*(of\\s+)?(experience|exp)\\s*(?:minimum|required|min)/i);\n  if (expMatch) {\n    const minYears = parseInt(expMatch[1]);\n    if (minYears >= 8) {\n      removed.overExperienced++;\n      continue;\n    }\n  }\n\n  // Bangalore location guard: skip jobs that mention another Indian city but not Bangalore/Bengaluru\n  const hasBangalore = /\\b(bangalore|bengaluru)\\b/i.test(location);\n  const hasOtherCity = otherCityPattern.test(location);\n  if (!hasBangalore && hasOtherCity) {\n    removed.offLocation++;\n    continue;\n  }\n\n  if (desc.length < 150) {\n    removed.shortDesc++;\n    continue;\n  }\n\n  filtered.push(item);\n}\n\n// Company cap: max 3 roles per company, keep highest seniority titles\nconst COMPANY_CAP = 3;\nconst byCompany = {};\nfor (const item of filtered) {\n  const co = (item.json.company || 'unknown')\n    .toLowerCase()\n    .replace(/\\s+(india|pvt|ltd|limited|inc|technologies|tech|solutions|services)\\.?\\b/gi, '')\n    .trim();\n  if (!byCompany[co]) byCompany[co] = [];\n  byCompany[co].push(item);\n}\n\nconst capped = [];\nconst capRemoved = [];\nfor (const [co, coItems] of Object.entries(byCompany)) {\n  if (coItems.length <= COMPANY_CAP) {\n    capped.push(...coItems);\n  } else {\n    const sorted = [...coItems].sort((a, b) => seniorityScore(b.json.title || '') - seniorityScore(a.json.title || ''));\n    capped.push(...sorted.slice(0, COMPANY_CAP));\n    capRemoved.push(`${co.slice(0, 20)} (dropped ${coItems.length - COMPANY_CAP})`);\n  }\n}\n\nif (capped.length === 0) {\n  throw new Error(`All ${items.length} jobs filtered. Non-.NET: ${removed.nonDotNet.length}, Junior: ${removed.tooJunior.length}, Senior: ${removed.tooSenior.length}, Over-exp: ${removed.overExperienced}, Off-location: ${removed.offLocation}, Stubs: ${removed.shortDesc}.`);\n}\n\nconsole.log(`Stack filter: ${items.length} -> ${capped.length}. Removed: ${removed.nonDotNet.length} non-.NET, ${removed.tooJunior.length} junior, ${removed.tooSenior.length} senior, ${removed.overExperienced} over-exp (8+ yrs), ${removed.offLocation} off-location, ${removed.shortDesc} stubs. Company cap: ${capRemoved.length > 0 ? capRemoved.join('; ') : 'none'}`);\nif (removed.nonDotNet.length > 0) console.log('Non-.NET removed:', removed.nonDotNet.slice(0, 5).join(' | '));\n\nreturn capped;"
+        "jsCode": "const items = $input.all();\n\n// Non-.NET stack patterns in job title — .NET/C# anywhere in title overrides\nconst nonDotNetTitlePatterns = [\n  /\bjavas*(developer|engineer|backend|full.?stack|programmer)\b/i,\n  /\bjava[s,/|]+react\b/i,\n  /\bjava[s,/|]+spring\b/i,\n  /\bnode.?jss*(developer|engineer|backend|full.?stack)\b/i,\n  /\bpythons*(developer|engineer|backend|programmer)\b/i,\n  /\brubys*(developer|engineer|on rails)\b/i,\n  /\bgolang\b/i,\n  /\bphps*(developer|engineer|programmer)\b/i,\n  /\bandroids*(developer|engineer)\b/i,\n  /\bioss*(developer|engineer)\b/i,\n  /\bflutters*(developer|engineer)\b/i,\n  /\breacts*natives*(developer|engineer)\b/i,\n  /\bmobiles*(ui|developer|engineer)\b/i,\n  /\buis*developer\b/i,\n  /\bdatas*(scientist|analyst)\b/i,\n  /\bmachines*learnings*(engineer|developer)\b/i,\n  /\bsalesforces*(developer|engineer|consultant)\b/i,\n  /\bsaps*(developer|consultant|abap)\b/i,\n];\n\nconst dotNetTitlePatterns = [/.net/i, /\bc#\b/i, /\basp.net/i, /\bdotnet\b/i];\n\nconst tooJuniorPatterns = [\n  /\bfresher\b/i,\n  /\binternship\b/i,\n  /\b(junior|jr.?)s*(developer|engineer|sde|programmer)\b/i,\n  /\bgraduates*(engineer|developer|trainee)\b/i,\n  /\btrainees*(engineer|developer|software)\b/i,\n  /\b0[-]?[12]s*years?\b/i,\n];\n\nconst tooSeniorPatterns = [\n  /\bprincipals*(engineer|architect|developer|software)\b/i,\n  /\bstaffs*(engineer|developer|software)\b/i,\n  /\b(vp|vice president)s*(of|,)?s*(engineering|technology|software)\b/i,\n  /\b(cto|chiefs*technologys*officer)\b/i,\n  /\bengineerings*director\b/i,\n];\n\nconst otherCityPattern = /\b(mumbai|hyderabad|chennai|pune|delhi|gurugram|gurgaon|noida|kolkata|ahmedabad|jaipur|indore|coimbatore)\b/i;\n\nfunction seniorityScore(title) {\n  if (/\b(senior|sr.?|lead|tech lead)\b/i.test(title)) return 3;\n  if (/\b(sdes*[23]|ses*[23]|engineers*(ii|iii)|developers*(ii|iii)|softwares*engineers*(2|3))\b/i.test(title)) return 2;\n  return 1;\n}\n\nconst filtered = [];\nconst removed = { nonDotNet: [], tooJunior: [], tooSenior: [], overExperienced: 0, offLocation: 0, shortDesc: 0 };\n\nfor (const item of items) {\n  const title = item.json.title || '';\n  const desc = item.json.description || '';\n  const location = item.json.location || '';\n\n  const hasDotNetInTitle = dotNetTitlePatterns.some(p => p.test(title));\n  if (!hasDotNetInTitle && nonDotNetTitlePatterns.some(p => p.test(title))) {\n    removed.nonDotNet.push(title);\n    continue;\n  }\n\n  if (tooJuniorPatterns.some(p => p.test(title))) {\n    removed.tooJunior.push(title);\n    continue;\n  }\n\n  if (tooSeniorPatterns.some(p => p.test(title))) {\n    removed.tooSenior.push(title);\n    continue;\n  }\n\n  const expMatch = desc.match(/\b(d+)s*+s*years?s*(ofs+)?(experience|exp)/i) ||\n                   desc.match(/(?:minimum|ats+least|min.?)s*(d+)s*years?s*(ofs+)?(experience|exp)/i) ||\n                   desc.match(/(d+)s*years?s*(ofs+)?(experience|exp)s*(?:minimum|required|min)/i);\n  if (expMatch) {\n    const minYears = parseInt(expMatch[1]);\n    if (minYears >= 8) { removed.overExperienced++; continue; }\n  }\n\n  const hasBangalore = /\b(bangalore|bengaluru)\b/i.test(location);\n  const hasOtherCity = otherCityPattern.test(location);\n  if (!hasBangalore && hasOtherCity) { removed.offLocation++; continue; }\n\n  if (desc.length < 150) { removed.shortDesc++; continue; }\n\n  filtered.push(item);\n}\n\nconst COMPANY_CAP = 3;\nconst byCompany = {};\nfor (const item of filtered) {\n  const co = (item.json.company || 'unknown')\n    .toLowerCase()\n    .replace(/s+(india|pvt|ltd|limited|inc|technologies|tech|solutions|services).?\b/gi, '')\n    .trim();\n  if (!byCompany[co]) byCompany[co] = [];\n  byCompany[co].push(item);\n}\n\nconst capped = [];\nconst capRemoved = [];\nfor (const [co, coItems] of Object.entries(byCompany)) {\n  if (coItems.length <= COMPANY_CAP) {\n    capped.push(...coItems);\n  } else {\n    const sorted = [...coItems].sort((a, b) => seniorityScore(b.json.title || '') - seniorityScore(a.json.title || ''));\n    capped.push(...sorted.slice(0, COMPANY_CAP));\n    capRemoved.push(co.slice(0, 20) + ' (dropped ' + (coItems.length - COMPANY_CAP) + ')');\n  }\n}\n\nif (capped.length === 0) {\n  throw new Error('All ' + items.length + ' jobs filtered. Non-.NET: ' + removed.nonDotNet.length + ', Junior: ' + removed.tooJunior.length + ', Senior: ' + removed.tooSenior.length + ', Over-exp: ' + removed.overExperienced + ', Off-location: ' + removed.offLocation + ', Stubs: ' + removed.shortDesc + '.');\n}\n\nconsole.log('Stack filter: ' + items.length + ' -> ' + capped.length + '. Removed: ' + removed.nonDotNet.length + ' non-.NET, ' + removed.tooJunior.length + ' junior, ' + removed.tooSenior.length + ' senior, ' + removed.overExperienced + ' over-exp, ' + removed.offLocation + ' off-location, ' + removed.shortDesc + ' stubs. Company cap: ' + (capRemoved.length > 0 ? capRemoved.join('; ') : 'none'));\nif (removed.nonDotNet.length > 0) console.log('Non-.NET removed:', removed.nonDotNet.slice(0, 5).join(' | '));\n\nreturn capped;",
+        "mode": "runOnceForAllItems"
       },
       "id": "filterStackQuality",
       "name": "Filter Stack & Quality",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2950, 50]
+      "position": [
+        2960,
+        64
+      ]
     },
     {
       "parameters": {
@@ -258,7 +381,10 @@
       "name": "Prepare Score Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3200, 50]
+      "position": [
+        3200,
+        64
+      ]
     },
     {
       "parameters": {
@@ -267,7 +393,10 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $json.openAiApiKey }}" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.openAiApiKey }}"
+            }
           ]
         },
         "sendBody": true,
@@ -276,7 +405,10 @@
         "body": "={{ $json.aiPayload }}",
         "options": {
           "batching": {
-            "batch": { "batchSize": 1, "batchInterval": 3000 }
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 3000
+            }
           },
           "timeout": 60000
         }
@@ -285,29 +417,39 @@
       "name": "Score OpenAI API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3450, 50],
+      "position": [
+        3456,
+        64
+      ],
       "retryOnFail": false
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const groqResponse = $input.item.json;\nconst job = $('Prepare Score Request').item.json;\n\nconst aiText = groqResponse.choices?.[0]?.message?.content || '{}';\nlet p = {};\ntry { p = JSON.parse(aiText); } catch(e) {}\n\nreturn {\n  json: {\n    jobId: job.jobId,\n    title: job.title,\n    company: job.company,\n    location: job.location,\n    description: job.description,\n    postedDate: job.postedDate,\n    applyLink: job.applyLink,\n    source: job.source,\n    salary: job.salary,\n    schedule: job.schedule,\n    score: p.score || 0,\n    matchReason: p.matchReason || '',\n    missingSkills: p.missingSkills || [],\n    keyMatchingSkills: p.keyMatchingSkills || [],\n    experienceFit: p.experienceFit || 'unknown',\n    recommendation: p.recommendation || 'skip'\n  }\n};"
+        "jsCode": "const groqResponse = $input.item.json;\nconst job = $('Prepare Score Request').item.json;\n\nconst aiText = groqResponse.choices?.[0]?.message?.content || '{}';\nlet p = {};\ntry {\n  p = JSON.parse(aiText);\n} catch(e) {\n  // Extract JSON block in case model wrapped it in markdown or added extra text\n  const match = aiText.match(/{[sS]*}/);\n  if (match) {\n    try { p = JSON.parse(match[0]); } catch(e2) {}\n  }\n}\n\nconst score = typeof p.score === 'number' ? p.score : (parseInt(p.score) || 0);\n\nreturn {\n  json: {\n    jobId: job.jobId,\n    title: job.title,\n    company: job.company,\n    location: job.location,\n    description: job.description,\n    postedDate: job.postedDate,\n    applyLink: job.applyLink,\n    source: job.source,\n    salary: job.salary,\n    schedule: job.schedule,\n    score,\n    matchReason: p.matchReason || '',\n    missingSkills: Array.isArray(p.missingSkills) ? p.missingSkills : [],\n    keyMatchingSkills: Array.isArray(p.keyMatchingSkills) ? p.keyMatchingSkills : [],\n    experienceFit: p.experienceFit || 'unknown',\n    recommendation: p.recommendation || 'skip'\n  }\n};"
       },
       "id": "parseScore",
       "name": "Parse AI Score",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3700, 50]
+      "position": [
+        3712,
+        64
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst minScore = $('Set Job Preferences').first().json.minScore || 50;\n\nconst matched = items.filter(item => (item.json.score || 0) >= minScore);\n\nif (matched.length === 0) {\n  throw new Error(`No jobs scored above ${minScore}. Top score was ${Math.max(...items.map(i => i.json.score || 0))}. Try lowering minScore in Set Job Preferences.`);\n}\n\nreturn matched;"
+        "jsCode": "const items = $input.all();\nconst minScore = $('Set Job Preferences').first().json.minScore || 50;\n\nconst matched = items.filter(item => (item.json.score || 0) >= minScore);\n\nif (matched.length === 0) {\n  throw new Error(`No jobs scored above ${minScore}. Top score was ${Math.max(...items.map(i => i.json.score || 0))}. Try lowering minScore in Set Job Preferences.`);\n}\n\nreturn matched;",
+        "mode": "runOnceForAllItems"
       },
       "id": "filterMatches",
       "name": "Filter Top Matches",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3950, 50]
+      "position": [
+        3952,
+        64
+      ]
     },
     {
       "parameters": {
@@ -317,7 +459,10 @@
       "name": "Prepare Cover Letter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [4200, 50]
+      "position": [
+        4208,
+        64
+      ]
     },
     {
       "parameters": {
@@ -326,7 +471,10 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $json.openAiApiKey }}" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.openAiApiKey }}"
+            }
           ]
         },
         "sendBody": true,
@@ -335,7 +483,10 @@
         "body": "={{ $json.aiPayload }}",
         "options": {
           "batching": {
-            "batch": { "batchSize": 1, "batchInterval": 3000 }
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 3000
+            }
           },
           "timeout": 60000
         }
@@ -344,7 +495,10 @@
       "name": "Cover Letter OpenAI API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [4450, 50],
+      "position": [
+        4464,
+        64
+      ],
       "retryOnFail": false
     },
     {
@@ -356,19 +510,22 @@
       "name": "Attach Cover Letter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [4700, 50]
+      "position": [
+        4704,
+        64
+      ]
     },
     {
       "parameters": {
         "operation": "appendOrUpdate",
         "documentId": {
-          "value": "YOUR_GOOGLE_SHEET_ID",
           "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
           "mode": "id"
         },
         "sheetName": {
-          "value": "Job Tracker",
           "__rl": true,
+          "value": "Job Tracker",
           "mode": "name"
         },
         "columns": {
@@ -381,24 +538,126 @@
             "Match Score": "={{ $json.score }}",
             "Recommendation": "={{ $json.recommendation }}",
             "Match Reason": "={{ $json.matchReason }}",
-            "Missing Skills": "={{ $json.missingSkills.join(', ') }}",
+            "Missing Skills": "={{ $json.missingSkills.join(\", \") }}",
             "Apply Link": "={{ $json.applyLink }}",
             "Cover Letter": "={{ $json.coverLetter }}"
           },
-          "matchingColumns": ["Job Title", "Company", "Apply Link"],
+          "matchingColumns": [
+            "Job Title",
+            "Company",
+            "Apply Link"
+          ],
           "schema": [
-            { "id": "Date", "displayName": "Date", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Job Title", "displayName": "Job Title", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Company", "displayName": "Company", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Location", "displayName": "Location", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Match Score", "displayName": "Match Score", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Recommendation", "displayName": "Recommendation", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Match Reason", "displayName": "Match Reason", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Missing Skills", "displayName": "Missing Skills", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Apply Link", "displayName": "Apply Link", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Cover Letter", "displayName": "Cover Letter", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Status", "displayName": "Status", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Applied Date", "displayName": "Applied Date", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true }
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Match Score",
+              "displayName": "Match Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Recommendation",
+              "displayName": "Recommendation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Match Reason",
+              "displayName": "Match Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Missing Skills",
+              "displayName": "Missing Skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Apply Link",
+              "displayName": "Apply Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cover Letter",
+              "displayName": "Cover Letter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Applied Date",
+              "displayName": "Applied Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
           ],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
@@ -409,17 +668,24 @@
       "name": "Save to Google Sheets",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [4950, 50]
+      "position": [
+        4960,
+        64
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst config = $('Set Job Preferences').first().json;\nconst today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nconst getScore = j => Number(j['Match Score'] || j.score || 0);\n\nif (items.length === 0) {\n  return {\n    json: {\n      subject: `Job Search: No new matches found - ${today}`,\n      htmlBody: `<html><body style=\"font-family: Arial, sans-serif;\"><h2>Job Search Report - ${today}</h2><p>No new jobs matched your criteria (minimum score: ${config.minScore}).</p></body></html>`,\n      matchCount: 0,\n      topScore: 0,\n      yourEmail: config.yourEmail\n    }\n  };\n}\n\n// Pull keyMatchingSkills from Attach Cover Letter (not persisted to Google Sheets)\nconst fullJobItems = $('Attach Cover Letter').all();\nconst merged = items.map((item, idx) => ({\n  ...item.json,\n  keyMatchingSkills: fullJobItems[idx]?.json?.keyMatchingSkills || []\n}));\nconst sorted = merged.sort((a, b) => getScore(b) - getScore(a));\nconst topScore = getScore(sorted[0]);\n\nconst jobRows = sorted.map(j => {\n  const title = j['Job Title'] || j.title || 'Unknown Title';\n  const company = j['Company'] || j.company || 'Unknown';\n  const location = j['Location'] || j.location || 'Not specified';\n  const score = getScore(j);\n  const recommendation = j['Recommendation'] || j.recommendation || 'skip';\n  const matchReason = j['Match Reason'] || j.matchReason || '';\n  const missingSkills = j['Missing Skills'] || (j.missingSkills ? (Array.isArray(j.missingSkills) ? j.missingSkills.join(', ') : j.missingSkills) : '');\n  const applyLink = j['Apply Link'] || j.applyLink || '#';\n  const coverLetter = j['Cover Letter'] || j.coverLetter || '';\n  const source = j.source || 'Google Jobs';\n  const salary = j.salary || 'Not listed';\n  const scoreColor = score >= 85 ? '#27ae60' : score >= 70 ? '#f39c12' : '#e74c3c';\n  const recBadge = recommendation === 'strong-apply' ? 'Strong Apply' : recommendation === 'apply' ? 'Apply' : recommendation === 'maybe' ? 'Maybe' : 'Skip';\n  const keySkillsArr = Array.isArray(j.keyMatchingSkills) ? j.keyMatchingSkills : [];\n  const keySkillTags = keySkillsArr.slice(0, 5).map(s =>\n    `<span style=\"background:#27ae60;color:white;padding:2px 7px;border-radius:10px;font-size:11px;margin-right:4px;\">${s}</span>`\n  ).join('');\n  return `<tr style=\"border-bottom: 1px solid #eee;\"><td style=\"padding: 12px;\"><strong>${title}</strong><br><span style=\"color: #666;\">${company} - ${location}</span><br><span style=\"color: #888; font-size: 12px;\">${source} | ${salary}</span></td><td style=\"padding: 12px; text-align: center;\"><span style=\"background: ${scoreColor}; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold;\">${score}</span></td><td style=\"padding: 12px; text-align: center;\">${recBadge}</td><td style=\"padding: 12px;\"><a href=\"${applyLink}\" style=\"background: #3498db; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none;\">Apply</a></td></tr><tr><td colspan=\"4\" style=\"padding: 8px 12px; background: #f9f9f9;\"><strong>Why it matches:</strong> ${matchReason}<br>${keySkillTags ? '<strong>Key skills:</strong> ' + keySkillTags + '<br>' : ''}${missingSkills ? '<strong>Missing:</strong> ' + missingSkills : ''}</td></tr><tr><td colspan=\"4\" style=\"padding: 8px 12px; background: #f0f7ff;\"><details><summary style=\"cursor: pointer; font-weight: bold;\">Cover Letter</summary><div style=\"white-space: pre-wrap; margin-top: 8px; padding: 12px; background: white; border: 1px solid #ddd; border-radius: 4px;\">${coverLetter}</div></details></td></tr>`;\n}).join('');\n\nconst htmlBody = `<html><body style=\"font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;\"><div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 8px 8px 0 0;\"><h1 style=\"color: white; margin: 0;\">Job Search Report</h1><p style=\"color: rgba(255,255,255,0.8); margin: 8px 0 0;\">${today}</p></div><div style=\"background: #f5f5f5; padding: 16px;\"><span style=\"background: white; padding: 12px 24px; border-radius: 8px; margin-right: 16px;\"><strong style=\"font-size: 24px; color: #3498db;\">${sorted.length}</strong> Matches</span><span style=\"background: white; padding: 12px 24px; border-radius: 8px;\"><strong style=\"font-size: 24px; color: #27ae60;\">${topScore}</strong> Top Score</span></div><table style=\"width: 100%; border-collapse: collapse; background: white;\"><thead><tr style=\"background: #ecf0f1;\"><th style=\"padding: 12px; text-align: left;\">Job</th><th style=\"padding: 12px; text-align: center;\">Score</th><th style=\"padding: 12px; text-align: center;\">Action</th><th style=\"padding: 12px;\">Link</th></tr></thead><tbody>${jobRows}</tbody></table><div style=\"padding: 16px; text-align: center; color: #888; font-size: 12px;\">Generated by n8n Job Search Automation | Min score: ${config.minScore}</div></body></html>`;\n\nreturn {\n  json: {\n    subject: `${sorted.length} Job Matches (Top: ${topScore}/100) - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,\n    htmlBody,\n    matchCount: sorted.length,\n    topScore,\n    yourEmail: config.yourEmail\n  }\n};"
+        "jsCode": "const items = $input.all();\nconst config = $('Set Job Preferences').first().json;\nconst today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nconst getScore = j => Number(j['Match Score'] || j.score || 0);\n\nif (items.length === 0) {\n  return {\n    json: {\n      subject: `Job Search: No new matches found - ${today}`,\n      htmlBody: `<html><body style=\"font-family: Arial, sans-serif;\"><h2>Job Search Report - ${today}</h2><p>No new jobs matched your criteria (minimum score: ${config.minScore}).</p></body></html>`,\n      matchCount: 0,\n      topScore: 0,\n      yourEmail: config.yourEmail\n    }\n  };\n}\n\n// Pull keyMatchingSkills from Attach Cover Letter (not persisted to Google Sheets)\nconst fullJobItems = $('Attach Cover Letter').all();\nconst merged = items.map((item, idx) => ({\n  ...item.json,\n  keyMatchingSkills: fullJobItems[idx]?.json?.keyMatchingSkills || []\n}));\nconst sorted = merged.sort((a, b) => getScore(b) - getScore(a));\nconst topScore = getScore(sorted[0]);\n\nconst jobRows = sorted.map(j => {\n  const title = j['Job Title'] || j.title || 'Unknown Title';\n  const company = j['Company'] || j.company || 'Unknown';\n  const location = j['Location'] || j.location || 'Not specified';\n  const score = getScore(j);\n  const recommendation = j['Recommendation'] || j.recommendation || 'skip';\n  const matchReason = j['Match Reason'] || j.matchReason || '';\n  const missingSkills = j['Missing Skills'] || (j.missingSkills ? (Array.isArray(j.missingSkills) ? j.missingSkills.join(', ') : j.missingSkills) : '');\n  const applyLink = j['Apply Link'] || j.applyLink || '#';\n  const coverLetter = j['Cover Letter'] || j.coverLetter || '';\n  const source = j.source || 'Google Jobs';\n  const salary = j.salary || 'Not listed';\n  const scoreColor = score >= 85 ? '#27ae60' : score >= 70 ? '#f39c12' : '#e74c3c';\n  const recBadge = recommendation === 'strong-apply' ? 'Strong Apply' : recommendation === 'apply' ? 'Apply' : recommendation === 'maybe' ? 'Maybe' : 'Skip';\n  const keySkillsArr = Array.isArray(j.keyMatchingSkills) ? j.keyMatchingSkills : [];\n  const keySkillTags = keySkillsArr.slice(0, 5).map(s =>\n    `<span style=\"background:#27ae60;color:white;padding:2px 7px;border-radius:10px;font-size:11px;margin-right:4px;\">${s}</span>`\n  ).join('');\n  return `<tr style=\"border-bottom: 1px solid #eee;\"><td style=\"padding: 12px;\"><strong>${title}</strong><br><span style=\"color: #666;\">${company} - ${location}</span><br><span style=\"color: #888; font-size: 12px;\">${source} | ${salary}</span></td><td style=\"padding: 12px; text-align: center;\"><span style=\"background: ${scoreColor}; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold;\">${score}</span></td><td style=\"padding: 12px; text-align: center;\">${recBadge}</td><td style=\"padding: 12px;\"><a href=\"${applyLink}\" style=\"background: #3498db; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none;\">Apply</a></td></tr><tr><td colspan=\"4\" style=\"padding: 8px 12px; background: #f9f9f9;\"><strong>Why it matches:</strong> ${matchReason}<br>${keySkillTags ? '<strong>Key skills:</strong> ' + keySkillTags + '<br>' : ''}${missingSkills ? '<strong>Missing:</strong> ' + missingSkills : ''}</td></tr><tr><td colspan=\"4\" style=\"padding: 8px 12px; background: #f0f7ff;\"><details><summary style=\"cursor: pointer; font-weight: bold;\">Cover Letter</summary><div style=\"white-space: pre-wrap; margin-top: 8px; padding: 12px; background: white; border: 1px solid #ddd; border-radius: 4px;\">${coverLetter}</div></details></td></tr>`;\n}).join('');\n\nconst htmlBody = `<html><body style=\"font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;\"><div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 8px 8px 0 0;\"><h1 style=\"color: white; margin: 0;\">Job Search Report</h1><p style=\"color: rgba(255,255,255,0.8); margin: 8px 0 0;\">${today}</p></div><div style=\"background: #f5f5f5; padding: 16px;\"><span style=\"background: white; padding: 12px 24px; border-radius: 8px; margin-right: 16px;\"><strong style=\"font-size: 24px; color: #3498db;\">${sorted.length}</strong> Matches</span><span style=\"background: white; padding: 12px 24px; border-radius: 8px;\"><strong style=\"font-size: 24px; color: #27ae60;\">${topScore}</strong> Top Score</span></div><table style=\"width: 100%; border-collapse: collapse; background: white;\"><thead><tr style=\"background: #ecf0f1;\"><th style=\"padding: 12px; text-align: left;\">Job</th><th style=\"padding: 12px; text-align: center;\">Score</th><th style=\"padding: 12px; text-align: center;\">Action</th><th style=\"padding: 12px;\">Link</th></tr></thead><tbody>${jobRows}</tbody></table><div style=\"padding: 16px; text-align: center; color: #888; font-size: 12px;\">Generated by n8n Job Search Automation | Min score: ${config.minScore}</div></body></html>`;\n\nreturn {\n  json: {\n    subject: `${sorted.length} Job Matches (Top: ${topScore}/100) - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,\n    htmlBody,\n    matchCount: sorted.length,\n    topScore,\n    yourEmail: config.yourEmail\n  }\n};",
+        "mode": "runOnceForAllItems"
       },
       "id": "buildEmail",
       "name": "Build Email Digest",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [5200, 50]
+      "position": [
+        5200,
+        64
+      ]
     },
     {
       "parameters": {
@@ -432,7 +698,11 @@
       "name": "Send Gmail Digest",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [5450, 50]
+      "position": [
+        5456,
+        64
+      ],
+      "webhookId": "070ae7ac-9add-48e7-b1be-2d7a49576389"
     },
     {
       "parameters": {
@@ -442,44 +712,325 @@
       "name": "Success Summary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [5700, 50]
+      "position": [
+        5712,
+        64
+      ]
     }
   ],
   "connections": {
-    "Manual Trigger": { "main": [[{ "node": "Read Resume PDF", "type": "main", "index": 0 }]] },
-    "Read Resume PDF": { "main": [[{ "node": "Extract PDF Text", "type": "main", "index": 0 }]] },
-    "Extract PDF Text": { "main": [[{ "node": "Set Job Preferences", "type": "main", "index": 0 }]] },
-    "Set Job Preferences": { "main": [[
-      { "node": "Search Google Jobs (JSearch)", "type": "main", "index": 0 },
-      { "node": "Set Naukri Queries", "type": "main", "index": 0 },
-      { "node": "Set Naukri Queries (C#)", "type": "main", "index": 0 }
-    ]] },
-    "Set Naukri Queries": { "main": [[{ "node": "Search Naukri (Apify)", "type": "main", "index": 0 }]] },
-    "Set Naukri Queries (C#)": { "main": [[{ "node": "Search Naukri C# (Apify)", "type": "main", "index": 0 }]] },
-    "Search Google Jobs (JSearch)": { "main": [[{ "node": "Merge Search Results", "type": "main", "index": 0 }]] },
-    "Search Naukri (Apify)": { "main": [[{ "node": "Merge Search Results", "type": "main", "index": 1 }]] },
-    "Search Naukri C# (Apify)": { "main": [[{ "node": "Merge Search Results", "type": "main", "index": 2 }]] },
-    "Merge Search Results": { "main": [[{ "node": "Parse Job Results", "type": "main", "index": 0 }]] },
-    "Parse Job Results": { "main": [[{ "node": "Filter Duplicates", "type": "main", "index": 0 }]] },
-    "Filter Duplicates": { "main": [[{ "node": "Aggregate Jobs", "type": "main", "index": 0 }]] },
-    "Aggregate Jobs": { "main": [[
-      { "node": "Sync Dedup Inputs", "type": "main", "index": 0 },
-      { "node": "Read Existing Jobs", "type": "main", "index": 0 }
-    ]] },
-    "Read Existing Jobs": { "main": [[{ "node": "Sync Dedup Inputs", "type": "main", "index": 1 }]] },
-    "Sync Dedup Inputs": { "main": [[{ "node": "Filter New Jobs Only", "type": "main", "index": 0 }]] },
-    "Filter New Jobs Only": { "main": [[{ "node": "Filter Stack & Quality", "type": "main", "index": 0 }]] },
-    "Filter Stack & Quality": { "main": [[{ "node": "Prepare Score Request", "type": "main", "index": 0 }]] },
-    "Prepare Score Request": { "main": [[{ "node": "Score OpenAI API", "type": "main", "index": 0 }]] },
-    "Score OpenAI API": { "main": [[{ "node": "Parse AI Score", "type": "main", "index": 0 }]] },
-    "Parse AI Score": { "main": [[{ "node": "Filter Top Matches", "type": "main", "index": 0 }]] },
-    "Filter Top Matches": { "main": [[{ "node": "Prepare Cover Letter", "type": "main", "index": 0 }]] },
-    "Prepare Cover Letter": { "main": [[{ "node": "Cover Letter OpenAI API", "type": "main", "index": 0 }]] },
-    "Cover Letter OpenAI API": { "main": [[{ "node": "Attach Cover Letter", "type": "main", "index": 0 }]] },
-    "Attach Cover Letter": { "main": [[{ "node": "Save to Google Sheets", "type": "main", "index": 0 }]] },
-    "Save to Google Sheets": { "main": [[{ "node": "Build Email Digest", "type": "main", "index": 0 }]] },
-    "Build Email Digest": { "main": [[{ "node": "Send Gmail Digest", "type": "main", "index": 0 }]] },
-    "Send Gmail Digest": { "main": [[{ "node": "Success Summary", "type": "main", "index": 0 }]] }
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Resume PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Resume PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Set Job Preferences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Job Preferences": {
+      "main": [
+        [
+          {
+            "node": "Search Google Jobs (JSearch)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Set Naukri Queries",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Set Naukri Queries (C#)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Naukri Queries": {
+      "main": [
+        [
+          {
+            "node": "Search Naukri (Apify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Naukri Queries (C#)": {
+      "main": [
+        [
+          {
+            "node": "Search Naukri C# (Apify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Google Jobs (JSearch)": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Naukri (Apify)": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Search Naukri C# (Apify)": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Search Results": {
+      "main": [
+        [
+          {
+            "node": "Parse Job Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Job Results": {
+      "main": [
+        [
+          {
+            "node": "Filter Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Jobs": {
+      "main": [
+        [
+          {
+            "node": "Sync Dedup Inputs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Existing Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Existing Jobs": {
+      "main": [
+        [
+          {
+            "node": "Sync Dedup Inputs",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Sync Dedup Inputs": {
+      "main": [
+        [
+          {
+            "node": "Filter New Jobs Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Jobs Only": {
+      "main": [
+        [
+          {
+            "node": "Filter Stack & Quality",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Stack & Quality": {
+      "main": [
+        [
+          {
+            "node": "Prepare Score Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Score Request": {
+      "main": [
+        [
+          {
+            "node": "Score OpenAI API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score OpenAI API": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Score": {
+      "main": [
+        [
+          {
+            "node": "Filter Top Matches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Top Matches": {
+      "main": [
+        [
+          {
+            "node": "Prepare Cover Letter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Cover Letter": {
+      "main": [
+        [
+          {
+            "node": "Cover Letter OpenAI API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cover Letter OpenAI API": {
+      "main": [
+        [
+          {
+            "node": "Attach Cover Letter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Cover Letter": {
+      "main": [
+        [
+          {
+            "node": "Save to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Build Email Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Digest": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail Digest": {
+      "main": [
+        [
+          {
+            "node": "Success Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
   "settings": {

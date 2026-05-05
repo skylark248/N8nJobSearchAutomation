@@ -4,6 +4,17 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.8] — 2026-05-05
+
+### Fixed
+- **39 zero-score jobs in Parse AI Score** — root cause: OpenAI occasionally wraps the JSON response in markdown code fences or adds preamble text, causing `JSON.parse` to throw and fall back to `{}` (score 0). Fix: added a regex extraction fallback `aiText.match(/\{[\s\S]*\}/)` that pulls the JSON block out of any surrounding text before parsing.
+- **Mobile UI and Java+framework roles slipping through Filter Stack & Quality** — `SDE-II Mobile UI @ ZET` scored 100, `Senior Software Engineer (java, React) @ everbridge` scored 78. Both passed the title filter because their patterns weren't covered. Added 3 new title blacklist patterns: `/\bjava[\s,/|]+react\b/i`, `/\bjava[\s,/|]+spring\b/i`, `/\bmobile\s*(ui|developer|engineer)\b/i`, `/\bui\s*developer\b/i`.
+
+### Changed
+- **minScore lowered 75 → 50** — execution #28 analysis showed 23 jobs scored 65-74 (just below old cutoff) that are legitimate matches. At 50, borderline .NET roles surface instead of being silently dropped. Expected matches per run: 11 → 30-50.
+
+---
+
 ## [v9.7] — 2026-05-05
 
 ### Fixed
