@@ -141,20 +141,44 @@ Open [http://localhost:5678](http://localhost:5678) in your browser.
 
 ### Step 3: Import the Workflow
 
+**Option A — via n8n CLI (recommended, preserves node IDs):**
+
+```bash
+# Copy the JSON into the container and import
+docker cp exports/job-search-automation.json n8n:/tmp/job-search-automation.json
+
+# Add the required workflow ID then import
+docker exec n8n node -e "
+const fs = require('fs');
+const wf = JSON.parse(fs.readFileSync('/tmp/job-search-automation.json', 'utf8'));
+wf.id = '8vs888j57KeLaGtH';
+fs.writeFileSync('/tmp/job-search-automation.json', JSON.stringify(wf));
+"
+docker exec n8n n8n import:workflow --input=/tmp/job-search-automation.json
+```
+
+**Option B — via n8n UI:**
 1. In n8n → click **"Add workflow"** → **"Import from file"**
 2. Select `exports/job-search-automation.json`
 
 ### Step 4: Configure Credentials
 
-Open the **Set Job Preferences** node and fill in these 5 fields:
+Open the **Set Job Preferences** node and fill in these 2 fields (API keys are now read from `keys.json`):
 
-| Field | Value | Where to get |
-|---|---|---|
-| `rapidApiKey` | Your RapidAPI key | rapidapi.com → Subscribe to JSearch Basic (free) |
-| `openAiApiKey` | `sk-proj-...` | platform.openai.com/api-keys |
-| `apifyToken` | `apify_api_...` | console.apify.com/account/integrations |
-| `yourEmail` | Your Gmail address | — |
-| `spreadsheetId` | Google Sheet ID | From Sheet URL: `/d/SPREADSHEET_ID/edit` |
+| Field | Value |
+|---|---|
+| `yourEmail` | Your Gmail address (digest is sent here) |
+| `spreadsheetId` | Google Sheet ID from URL: `/d/SPREADSHEET_ID/edit` |
+
+Fill in `keys.json` in the repo root:
+
+```json
+{
+  "rapidApiKey": "YOUR_RAPIDAPI_KEY",
+  "openAiApiKey": "sk-proj-...",
+  "apifyToken": "apify_api_..."
+}
+```
 
 Then configure Google OAuth2 (see [docs/setup-guide.md](docs/setup-guide.md)):
 - **Google Sheets OAuth2** → link to "Save to Google Sheets" and "Read Existing Jobs" nodes

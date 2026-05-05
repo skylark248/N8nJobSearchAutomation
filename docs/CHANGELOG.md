@@ -4,6 +4,23 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.7] — 2026-05-05
+
+### Fixed
+- **Code node execution modes** — 9 nodes were missing explicit `mode` setting and defaulting to `runOnceForEachItem` despite their code using `$input.all()`. This would cause each node to run once per input item rather than processing all items together, breaking deduplication, aggregation, and filtering logic.
+  - Set to `runOnceForAllItems`: `parseJobs`, `filterDuplicates`, `aggregateJobs`, `filterNewJobs`, `filterStackQuality`, `filterMatches`, `buildEmail`
+  - Set to `runOnceForAllItems`: `setNaukriQueries`, `setNaukriQueriesCSharp` (use `$input.first()` — must run once only to avoid duplicate Apify calls)
+- **Merge Search Results** — `mode` was set to empty `{}` instead of `append`. All 3 search branches (JSearch + Naukri .NET + Naukri C#) were not being combined correctly.
+- **Save to Google Sheets** — `matchingColumns` was set to `["Date"]` (single incorrect column) and `value` mapping was empty `{}`. Fixed to match on `["Job Title", "Company", "Apply Link"]` and mapped all 10 data columns correctly.
+- **Read Existing Jobs** — missing explicit `operation: "read"` parameter added.
+- **Sync Dedup Inputs** — missing explicit `mode: "append"` parameter added.
+
+### Changed
+- **Workflow import method**: Added CLI-based import using `docker exec n8n n8n import:workflow` as the recommended approach — preserves the canonical workflow ID `8vs888j57KeLaGtH` and avoids manual node ID drift.
+- **API keys**: Confirmed `keys.json` is correctly mounted at `/home/node/jobsearch-keys.json` inside Docker; `yourEmail` and `spreadsheetId` remain inline in Set Job Preferences.
+
+---
+
 ## [v9.6] — 2026-04-12
 
 ### Changed
@@ -457,7 +474,8 @@ Manual Trigger
 | v9.3 | 2026-03-16 | 28 | same + location guard + company cap | ~110** | ~15-28** | ~$0.30 |
 | v9.4 | 2026-03-16 | 28 | same | ~110** | ~15-28 (90-100 scores now possible) | ~$0.30 |
 | v9.5 | 2026-03-17 | 28 | All 3 sources confirmed working | ~210 | ~25-45 | ~$0.30 |
-| **v9.6** | **2026-04-12** | **28** | **same** | **~210** | **~25-45** | **~$0.30** |
+| v9.6 | 2026-04-12 | 28 | same | ~210 | ~25-45 | ~$0.30 |
+| **v9.7** | **2026-05-05** | **28** | **same** | **~210** | **~25-45** | **~$0.30** |
 
 *After cross-run dedup — first run always passes all ~210 jobs to scoring.
 **Pre-score filter blocks irrelevant stacks, overexperienced, off-location before OpenAI — reduces token usage and noise.
