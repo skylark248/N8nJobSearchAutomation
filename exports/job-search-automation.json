@@ -336,7 +336,7 @@
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "name": "Google Sheets OAuth2"
+          "name": "Google Sheets account"
         }
       }
     },
@@ -369,7 +369,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\n// Non-.NET stack patterns in job title — .NET/C# anywhere in title overrides\nconst nonDotNetTitlePatterns = [\n  /\bjavas*(developer|engineer|backend|full.?stack|programmer)\b/i,\n  /\bjava[s,/|]+react\b/i,\n  /\bjava[s,/|]+spring\b/i,\n  /\bnode.?jss*(developer|engineer|backend|full.?stack)\b/i,\n  /\bpythons*(developer|engineer|backend|programmer)\b/i,\n  /\brubys*(developer|engineer|on rails)\b/i,\n  /\bgolang\b/i,\n  /\bphps*(developer|engineer|programmer)\b/i,\n  /\bandroids*(developer|engineer)\b/i,\n  /\bioss*(developer|engineer)\b/i,\n  /\bflutters*(developer|engineer)\b/i,\n  /\breacts*natives*(developer|engineer)\b/i,\n  /\bmobiles*(ui|developer|engineer)\b/i,\n  /\buis*developer\b/i,\n  /\bdatas*(scientist|analyst)\b/i,\n  /\bmachines*learnings*(engineer|developer)\b/i,\n  /\bsalesforces*(developer|engineer|consultant)\b/i,\n  /\bsaps*(developer|consultant|abap)\b/i,\n];\n\nconst dotNetTitlePatterns = [/.net/i, /\bc#\b/i, /\basp.net/i, /\bdotnet\b/i];\n\nconst tooJuniorPatterns = [\n  /\bfresher\b/i,\n  /\binternship\b/i,\n  /\b(junior|jr.?)s*(developer|engineer|sde|programmer)\b/i,\n  /\bgraduates*(engineer|developer|trainee)\b/i,\n  /\btrainees*(engineer|developer|software)\b/i,\n  /\b0[-]?[12]s*years?\b/i,\n];\n\nconst tooSeniorPatterns = [\n  /\bprincipals*(engineer|architect|developer|software)\b/i,\n  /\bstaffs*(engineer|developer|software)\b/i,\n  /\b(vp|vice president)s*(of|,)?s*(engineering|technology|software)\b/i,\n  /\b(cto|chiefs*technologys*officer)\b/i,\n  /\bengineerings*director\b/i,\n];\n\nconst otherCityPattern = /\b(mumbai|hyderabad|chennai|pune|delhi|gurugram|gurgaon|noida|kolkata|ahmedabad|jaipur|indore|coimbatore)\b/i;\n\nfunction seniorityScore(title) {\n  if (/\b(senior|sr.?|lead|tech lead)\b/i.test(title)) return 3;\n  if (/\b(sdes*[23]|ses*[23]|engineers*(ii|iii)|developers*(ii|iii)|softwares*engineers*(2|3))\b/i.test(title)) return 2;\n  return 1;\n}\n\nconst filtered = [];\nconst removed = { nonDotNet: [], tooJunior: [], tooSenior: [], overExperienced: 0, offLocation: 0, shortDesc: 0 };\n\nfor (const item of items) {\n  const title = item.json.title || '';\n  const desc = item.json.description || '';\n  const location = item.json.location || '';\n\n  const hasDotNetInTitle = dotNetTitlePatterns.some(p => p.test(title));\n  if (!hasDotNetInTitle && nonDotNetTitlePatterns.some(p => p.test(title))) {\n    removed.nonDotNet.push(title);\n    continue;\n  }\n\n  if (tooJuniorPatterns.some(p => p.test(title))) {\n    removed.tooJunior.push(title);\n    continue;\n  }\n\n  if (tooSeniorPatterns.some(p => p.test(title))) {\n    removed.tooSenior.push(title);\n    continue;\n  }\n\n  const expMatch = desc.match(/\b(d+)s*+s*years?s*(ofs+)?(experience|exp)/i) ||\n                   desc.match(/(?:minimum|ats+least|min.?)s*(d+)s*years?s*(ofs+)?(experience|exp)/i) ||\n                   desc.match(/(d+)s*years?s*(ofs+)?(experience|exp)s*(?:minimum|required|min)/i);\n  if (expMatch) {\n    const minYears = parseInt(expMatch[1]);\n    if (minYears >= 8) { removed.overExperienced++; continue; }\n  }\n\n  const hasBangalore = /\b(bangalore|bengaluru)\b/i.test(location);\n  const hasOtherCity = otherCityPattern.test(location);\n  if (!hasBangalore && hasOtherCity) { removed.offLocation++; continue; }\n\n  if (desc.length < 150) { removed.shortDesc++; continue; }\n\n  filtered.push(item);\n}\n\nconst COMPANY_CAP = 3;\nconst byCompany = {};\nfor (const item of filtered) {\n  const co = (item.json.company || 'unknown')\n    .toLowerCase()\n    .replace(/s+(india|pvt|ltd|limited|inc|technologies|tech|solutions|services).?\b/gi, '')\n    .trim();\n  if (!byCompany[co]) byCompany[co] = [];\n  byCompany[co].push(item);\n}\n\nconst capped = [];\nconst capRemoved = [];\nfor (const [co, coItems] of Object.entries(byCompany)) {\n  if (coItems.length <= COMPANY_CAP) {\n    capped.push(...coItems);\n  } else {\n    const sorted = [...coItems].sort((a, b) => seniorityScore(b.json.title || '') - seniorityScore(a.json.title || ''));\n    capped.push(...sorted.slice(0, COMPANY_CAP));\n    capRemoved.push(co.slice(0, 20) + ' (dropped ' + (coItems.length - COMPANY_CAP) + ')');\n  }\n}\n\nif (capped.length === 0) {\n  throw new Error('All ' + items.length + ' jobs filtered. Non-.NET: ' + removed.nonDotNet.length + ', Junior: ' + removed.tooJunior.length + ', Senior: ' + removed.tooSenior.length + ', Over-exp: ' + removed.overExperienced + ', Off-location: ' + removed.offLocation + ', Stubs: ' + removed.shortDesc + '.');\n}\n\nconsole.log('Stack filter: ' + items.length + ' -> ' + capped.length + '. Removed: ' + removed.nonDotNet.length + ' non-.NET, ' + removed.tooJunior.length + ' junior, ' + removed.tooSenior.length + ' senior, ' + removed.overExperienced + ' over-exp, ' + removed.offLocation + ' off-location, ' + removed.shortDesc + ' stubs. Company cap: ' + (capRemoved.length > 0 ? capRemoved.join('; ') : 'none'));\nif (removed.nonDotNet.length > 0) console.log('Non-.NET removed:', removed.nonDotNet.slice(0, 5).join(' | '));\n\nreturn capped;",
+        "jsCode": "﻿const items = $input.all();\n\n// Non-.NET stack patterns in job title — .NET/C# anywhere in title overrides\nconst nonDotNetTitlePatterns = [\n  /\\bjava\\s*(developer|engineer|backend|full.?stack|programmer)\\b/i,\n  /\\bjava[\\s,/|]+react\\b/i,\n  /\\bjava[\\s,/|]+spring\\b/i,\n  /\\bnode.?js\\s*(developer|engineer|backend|full.?stack)\\b/i,\n  /\\bpython\\s*(developer|engineer|backend|programmer)\\b/i,\n  /\\bruby\\s*(developer|engineer|on rails)\\b/i,\n  /\\bgolang\\b/i,\n  /\\bphp\\s*(developer|engineer|programmer)\\b/i,\n  /\\bandroid\\s*(developer|engineer)\\b/i,\n  /\\bios\\s*(developer|engineer)\\b/i,\n  /\\bflutter\\s*(developer|engineer)\\b/i,\n  /\\breact\\s*native\\s*(developer|engineer)\\b/i,\n  /\\bmobile\\s*(ui|developer|engineer)\\b/i,\n  /\\bui\\s*developer\\b/i,\n  /\\bdata\\s*(scientist|analyst)\\b/i,\n  /\\bmachine\\s*learning\\s*(engineer|developer)\\b/i,\n  /\\bsalesforce\\s*(developer|engineer|consultant)\\b/i,\n  /\\bsap\\s*(developer|consultant|abap)\\b/i,\n];\n\nconst dotNetTitlePatterns = [/.net/i, /c#/i, /asp\\.net/i, /dotnet/i];\n\nconst tooJuniorPatterns = [\n  /fresher/i,\n  /internship/i,\n  /\\b(junior|jr\\.?)\\s*(developer|engineer|sde|programmer)\\b/i,\n  /\\bgraduate\\s*(engineer|developer|trainee)\\b/i,\n  /\\btrainee\\s*(engineer|developer|software)\\b/i,\n  /\\b0[-]?[12]\\s*years?\\b/i,\n];\n\nconst tooSeniorPatterns = [\n  /\\bprincipal\\s*(engineer|architect|developer|software)\\b/i,\n  /\\bstaff\\s*(engineer|developer|software)\\b/i,\n  /\\b(vp|vice president)\\s*(of|,)?\\s*(engineering|technology|software)\\b/i,\n  /\\b(cto|chief\\s*technology\\s*officer)\\b/i,\n  /\\bengineering\\s*director\\b/i,\n];\n\nconst otherCityPattern = /(mumbai|hyderabad|chennai|pune|delhi|gurugram|gurgaon|noida|kolkata|ahmedabad|jaipur|indore|coimbatore)/i;\n\nfunction seniorityScore(title) {\n  if (/(senior|sr\\.?|lead|tech lead)/i.test(title)) return 3;\n  if (/\\b(sde\\s*[23]|se\\s*[23]|engineer\\s*(ii|iii)|developer\\s*(ii|iii)|software\\s*engineer\\s*(2|3))\\b/i.test(title)) return 2;\n  return 1;\n}\n\nconst filtered = [];\nconst removed = { nonDotNet: [], tooJunior: [], tooSenior: [], overExperienced: 0, offLocation: 0, shortDesc: 0 };\n\nfor (const item of items) {\n  const title = item.json.title || '';\n  const desc = item.json.description || '';\n  const location = item.json.location || '';\n\n  const hasDotNetInTitle = dotNetTitlePatterns.some(p => p.test(title));\n  if (!hasDotNetInTitle && nonDotNetTitlePatterns.some(p => p.test(title))) {\n    removed.nonDotNet.push(title);\n    continue;\n  }\n\n  if (tooJuniorPatterns.some(p => p.test(title))) {\n    removed.tooJunior.push(title);\n    continue;\n  }\n\n  if (tooSeniorPatterns.some(p => p.test(title))) {\n    removed.tooSenior.push(title);\n    continue;\n  }\n\n  const expMatch = desc.match(/(\\d+)\\s*\\+\\s*years?\\s*(of\\s+)?(experience|exp)/i) ||\n                   desc.match(/(?:minimum|at\\s+least|min\\.?)\\s*(\\d+)\\s*years?\\s*(of\\s+)?(experience|exp)/i) ||\n                   desc.match(/(\\d+)\\s*years?\\s*(of\\s+)?(experience|exp)\\s*(?:minimum|required|min)/i);\n  if (expMatch) {\n    const minYears = parseInt(expMatch[1]);\n    if (minYears >= 8) { removed.overExperienced++; continue; }\n  }\n\n  const hasBangalore = /(bangalore|bengaluru)/i.test(location);\n  const hasOtherCity = otherCityPattern.test(location);\n  if (!hasBangalore && hasOtherCity) { removed.offLocation++; continue; }\n\n  if (desc.length < 150) { removed.shortDesc++; continue; }\n\n  filtered.push(item);\n}\n\nconst COMPANY_CAP = 3;\nconst byCompany = {};\nfor (const item of filtered) {\n  const co = (item.json.company || 'unknown')\n    .toLowerCase()\n    .replace(/\\s+(india|pvt|ltd|limited|inc|technologies|tech|solutions|services).?/gi, '')\n    .trim();\n  if (!byCompany[co]) byCompany[co] = [];\n  byCompany[co].push(item);\n}\n\nconst capped = [];\nconst capRemoved = [];\nfor (const [co, coItems] of Object.entries(byCompany)) {\n  if (coItems.length <= COMPANY_CAP) {\n    capped.push(...coItems);\n  } else {\n    const sorted = [...coItems].sort((a, b) => seniorityScore(b.json.title || '') - seniorityScore(a.json.title || ''));\n    capped.push(...sorted.slice(0, COMPANY_CAP));\n    capRemoved.push(co.slice(0, 20) + ' (dropped ' + (coItems.length - COMPANY_CAP) + ')');\n  }\n}\n\nif (capped.length === 0) {\n  throw new Error('All ' + items.length + ' jobs filtered. Non-.NET: ' + removed.nonDotNet.length + ', Junior: ' + removed.tooJunior.length + ', Senior: ' + removed.tooSenior.length + ', Over-exp: ' + removed.overExperienced + ', Off-location: ' + removed.offLocation + ', Stubs: ' + removed.shortDesc + '.');\n}\n\nconsole.log('Stack filter: ' + items.length + ' -> ' + capped.length + '. Removed: ' + removed.nonDotNet.length + ' non-.NET, ' + removed.tooJunior.length + ' junior, ' + removed.tooSenior.length + ' senior, ' + removed.overExperienced + ' over-exp, ' + removed.offLocation + ' off-location, ' + removed.shortDesc + ' stubs. Company cap: ' + (capRemoved.length > 0 ? capRemoved.join('; ') : 'none'));\nif (removed.nonDotNet.length > 0) console.log('Non-.NET removed:', removed.nonDotNet.slice(0, 5).join(' | '));\n\nreturn capped;\r\n",
         "mode": "runOnceForAllItems"
       },
       "id": "filterStackQuality",
@@ -684,7 +684,7 @@
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "name": "Google Sheets OAuth2"
+          "name": "Google Sheets account"
         }
       }
     },
@@ -720,7 +720,7 @@
       "webhookId": "070ae7ac-9add-48e7-b1be-2d7a49576389",
       "credentials": {
         "gmailOAuth2": {
-          "name": "Gmail OAuth2"
+          "name": "Gmail account"
         }
       }
     },
@@ -1063,8 +1063,9 @@
     "templateCredsSetupCompleted": true
   },
   "pinData": {},
-  "versionCounter": 22,
+  "versionCounter": 23,
   "triggerCount": 0,
+  "tags": [],
   "shared": [
     {
       "updatedAt": "2026-05-05T10:44:21.593Z",
@@ -1084,6 +1085,8 @@
       }
     }
   ],
-  "tags": [],
-  "activeVersion": null
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
 }
