@@ -4,6 +4,14 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.13] — 2026-05-09
+
+### Fixed
+- **"Bad request" 400 error in Search Naukri (Apify)** — root cause: in v9.12 the `experience` body parameter was set as the string `"4"` instead of integer `4`. The Apify naukri-job-scraper actor's input schema requires `experience` to be an `integer`. Apify rejected the request with HTTP 400. Fix: set the value as JS number `4` (not string). Verified against the actor's input schema fetched from `/v2/acts/.../builds/last`.
+- **Dev guideline added**: when modifying HTTP body parameters in n8n, preserve the JS type (number vs string vs array) — Apify and similar APIs validate against an OpenAPI/JSON Schema and reject type mismatches. The previous v9.10 value `5` was correct as a number; v9.12 accidentally string-quoted it during the patch.
+
+---
+
 ## [v9.12] — 2026-05-09
 
 ### Fixed (3 issues identified during execution #39 deep-dive)

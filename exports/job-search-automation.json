@@ -165,7 +165,7 @@
             },
             {
               "name": "experience",
-              "value": "4"
+              "value": 4
             },
             {
               "name": "no_of_jobs",
@@ -231,7 +231,7 @@
             },
             {
               "name": "experience",
-              "value": "4"
+              "value": 4
             },
             {
               "name": "no_of_jobs",
@@ -1063,7 +1063,7 @@
     "templateCredsSetupCompleted": true
   },
   "pinData": {},
-  "versionCounter": 25,
+  "versionCounter": 26,
   "triggerCount": 0,
   "tags": [],
   "shared": [
