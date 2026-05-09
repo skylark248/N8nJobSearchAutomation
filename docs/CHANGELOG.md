@@ -4,6 +4,24 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.11] — 2026-05-09
+
+### Changed
+- **Tightened Filter Stack & Quality based on execution #39 analysis** — analysis of the 28-job run showed 93/141 (66%) of OpenAI-scored jobs scored <50, wasting tokens and adding ~7 minutes to runtime. Root cause: title pattern was too narrow.
+  - **Broader stack patterns**: `\bjava\b`, `\bpython\b`, `\bnode\.?js\b`, `\bgolang\b`, `\b(c\+\+|cpp)\b`, `\bkernel\b` — match anywhere in title (catches "Senior Software Engineer - Java", "Java API Engineer", "Lead Software Engineer - C++")
+  - **Frontend/mobile additions**: `angular`, `vue`, `laravel`, `react native` (already had), `mobile`
+  - **Niche/product platforms**: `salesforce`, `sap`, `abap`, `temenos`, `workday`, `labware`, `genesys`, `servicenow`, `aveva`, `nugenesis`, `fenergo`, `sprinklr`
+  - **Role-type filter**: test/QA/SDET, DevOps/SRE/CI-CD, Cloud Engineer, Network Engineer, Security Engineer, Support roles, Project/Program Manager, Business Analyst — none of these are .NET backend roles
+  - **Junior pattern hardened**: `\bsoftware\s*engineer\s*i\b`, `\bsde[-\s]?[1i]\b`, `\bintern\b` — but yields to `.NET-in-title` so "Lead Software Engineer I (C#.NET)" still passes
+  - **Senior pattern broadened**: added `\bsr\.?\s*manager\b`, `\bdirector,?\s*software\b`, `\bsde\s*iii\b`/`\bsde\s*3\b`
+  - **Description-level non-.NET check**: catches "Java is required", "Python is the primary stack" when title is generic
+- **Expected impact** based on simulating new filter against execution #39's 193 input jobs:
+  - Pre-filter: 193 → 94 (was 141) — **47 fewer OpenAI scoring calls**
+  - Saves ~2.3 minutes runtime, ~$0.013 OpenAI tokens per run
+  - 4 high-score (>=70) drops are scoring hallucinations (pure Java/Python jobs OpenAI inflated to 70-90), not real matches
+
+---
+
 ## [v9.10] — 2026-05-09
 
 ### Fixed
