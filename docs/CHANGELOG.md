@@ -4,6 +4,13 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.10] — 2026-05-09
+
+### Fixed
+- **"Nothing to repeat" crash in Filter Stack & Quality** — all `\b`, `\s`, `\d` regex escape sequences were stored as literal `b`/`s`/`d` in the live workflow due to backslashes being dropped during a previous JSON serialization step. This made `/(\d+)\s*\+/` become `/(d+)s*+/` at runtime — a quantifier-on-quantifier (`s*` followed by `+`) that V8 rejects with "Nothing to repeat". All other title/seniority patterns also silently matched wrong (e.g. `/\bjava\s*/` became `/bjava s*/` — missed "java" at word boundaries). Fixed by rewriting node code via PowerShell here-string to preserve backslashes, importing via n8n CLI, and re-exporting.
+
+---
+
 ## [v9.9] — 2026-05-05
 
 ### Fixed
