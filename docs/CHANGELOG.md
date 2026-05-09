@@ -4,6 +4,30 @@ All notable changes to the n8n Job Search Automation workflow are documented her
 
 ---
 
+## [v9.12] — 2026-05-09
+
+### Fixed (3 issues identified during execution #39 deep-dive)
+
+1. **OpenAI scoring hallucinations** — root cause: previous prompt let LLM apply boosts based on *resume* content rather than *job* content. Pure Java/Python jobs were scoring 70-90 because LLM saw "candidate has Fintech experience" and added a +8 Fintech boost. Fix: rewrote `scoreMatch` system prompt with mandatory hard caps:
+   - **STEP 0 (hard caps, applied BEFORE rubric)**: Java/Python/Go/C++/Rust/Scala-primary roles → MUST score 0-35; mobile (Android/iOS/RN/Flutter) → 0-35; DevOps/SRE/QA/Data-Eng/Salesforce → 0-35; desktop/WPF → 0-50; no backend language identifiable → 0-50
+   - **Boost rule clarified**: "+8 only if JOB POSTING explicitly requires it. Do NOT add boosts because the resume has the skill"
+   - **matchReason field**: must quote the specific phrase from JOB DESCRIPTION (not resume) that triggered each boost/penalty
+
+2. **Generic-title jobs scoring 70+ with no .NET in description** — root cause: title filter can't detect "Senior Software Engineer" or "Cloud Backend Engineer" without examining description; LLM was filling the gap with hallucinated scores. Fix: handled by STEP 0 hard cap E ("If you cannot identify ANY backend programming language requirement: 0-50"). Forces LLM to actually read the description before scoring.
+
+3. **Desktop/WPF jobs with .NET in title slipping through** — added `\bwpf\b`, `\bwinforms\b`, `\bwin32\b`, `\bdesktop\s+(developer|engineer|application)\b` to non-.NET title patterns. Catches "C# Developer, WPF" and "C .NET WPF Developer" — these are desktop roles, not the web/cloud .NET we want.
+
+### Changed
+- **Naukri `experience: 5` → `4`** — slight widening to capture jobs targeting 4-7 year candidates rather than just 5+.
+
+### Expected impact
+- Score distribution should shift: pure-Java/Python jobs that scored 70-90 now capped at 35 → drop out at minScore=70 threshold
+- Generic-title jobs with vague descriptions now capped at 50 → also dropped
+- Final match list should be smaller but **dramatically cleaner** — every match should be an actual .NET/C# backend role
+- Estimated final matches: ~15-20 (down from 28) but quality significantly higher
+
+---
+
 ## [v9.11] — 2026-05-09
 
 ### Changed
